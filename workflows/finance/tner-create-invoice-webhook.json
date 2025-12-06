@@ -1,0 +1,388 @@
+{
+  "name": "TNER | Finance | create-invoice-webhook",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tner-create-invoice",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        500
+      ],
+      "webhookId": "tner-invoice-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.first().json.body || $input.first().json;\nconst crypto = require('crypto');\nconst idempotencyData = `${payload.customer.phone}-${payload.order.rental_start}-${JSON.stringify(payload.order.luggage_28)}-${JSON.stringify(payload.order.luggage_24)}`;\nconst idempotencyKey = crypto.createHash('md5').update(idempotencyData).digest('hex');\n\nreturn [{\n  json: {\n    idempotencyKey: idempotencyKey,\n    source: payload.source || 'unknown',\n    customer: payload.customer,\n    order: payload.order,\n    pricing: payload.pricing,\n    conversation_id: payload.conversation_id,\n    timestamp: payload.timestamp || new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-webhook",
+      "name": "Parse Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.xero.com/connections",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "get-connections",
+      "name": "Get Xero Orgs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        680,
+        500
+      ],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const connections = $input.all();\nconst alwcConnection = connections.find(conn => conn.json.tenantName && conn.json.tenantName.toUpperCase().includes('ALWC'));\nif (!alwcConnection) { throw new Error('ALWC not found'); }\nreturn [{ json: { tenantId: alwcConnection.json.tenantId } }];"
+      },
+      "id": "find-alwc",
+      "name": "Find ALWC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $('Parse Webhook').first().json;\nconst customer = webhookData.customer;\nconst tenantId = $input.first().json.tenantId;\n\nreturn [{\n  json: {\n    Contacts: [{\n      Name: customer.name,\n      EmailAddress: customer.email,\n      Phones: [{ PhoneType: 'MOBILE', PhoneNumber: customer.phone }],\n      Addresses: [{\n        AddressType: 'STREET',\n        AddressLine1: customer.address.split('\\n')[0] || customer.address.substring(0, 50),\n        AddressLine2: customer.address.split('\\n')[1] || '',\n        PostalCode: customer.address.match(/\\d{6}/)?.[0] || '',\n        Country: 'Singapore'\n      }]\n    }],\n    tenantId: tenantId\n  }\n}];"
+      },
+      "id": "prepare-contact",
+      "name": "Prepare Contact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://api.xero.com/api.xro/2.0/Contacts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xero-tenant-id",
+              "value": "={{ $json.tenantId }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"Contacts\": $json.Contacts } }}",
+        "options": {}
+      },
+      "id": "create-contact",
+      "name": "Create Xero Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1340,
+        500
+      ],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookData = $('Parse Webhook').first().json;\nconst contact = $input.first().json.Contacts[0];\nconst order = webhookData.order;\nconst tenantId = $('Find ALWC').item.json.tenantId;\n\nconst lineItems = [];\n\nif (order.luggage_28 && order.luggage_28.quantity > 0) {\n  lineItems.push({\n    ItemCode: 'LUG-002',\n    Description: `28\\\" Luggage Rental (${order.luggage_28.quantity} units × ${order.luggage_28.days} days)\\nPeriod: ${order.rental_start} - ${order.rental_end}`,\n    Quantity: order.luggage_28.quantity * order.luggage_28.days,\n    UnitAmount: 1.30,\n    AccountCode: '201',\n    TaxType: 'NONE'\n  });\n}\n\nif (order.luggage_24 && order.luggage_24.quantity > 0) {\n  lineItems.push({\n    ItemCode: 'LUG-001',\n    Description: `24\\\" Luggage Rental (${order.luggage_24.quantity} units × ${order.luggage_24.days} days)\\nPeriod: ${order.rental_start} - ${order.rental_end}`,\n    Quantity: order.luggage_24.quantity * order.luggage_24.days,\n    UnitAmount: 1.00,\n    AccountCode: '201',\n    TaxType: 'NONE'\n  });\n}\n\nif (order.delivery_required) {\n  const deliveryFee = webhookData.pricing.delivery_total / 2;\n  lineItems.push({\n    ItemCode: 'DEL-001',\n    Description: `Delivery (${order.luggage_count} luggage)\\n${order.delivery_date} (${order.delivery_time})`,\n    Quantity: deliveryFee / 10,\n    UnitAmount: 10.00,\n    AccountCode: '202',\n    TaxType: 'NONE'\n  });\n  \n  lineItems.push({\n    ItemCode: 'DEL-001',\n    Description: `Collection (${order.luggage_count} luggage)\\n${order.collection_date} (${order.collection_time})`,\n    Quantity: deliveryFee / 10,\n    UnitAmount: 10.00,\n    AccountCode: '202',\n    TaxType: 'NONE'\n  });\n}\n\nreturn [{\n  json: {\n    Invoices: [{\n      Type: 'ACCREC',\n      Contact: { ContactID: contact.ContactID },\n      Date: new Date().toISOString().split('T')[0],\n      DueDate: new Date().toISOString().split('T')[0],\n      LineAmountTypes: 'Exclusive',\n      LineItems: lineItems,\n      Reference: `Booking: ${order.rental_start} - ${order.rental_end}`,\n      Status: 'DRAFT'\n    }],\n    tenantId: tenantId\n  }\n}];"
+      },
+      "id": "prepare-invoice",
+      "name": "Prepare Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://api.xero.com/api.xro/2.0/Invoices",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xero-tenant-id",
+              "value": "={{ $json.tenantId }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"Invoices\": $json.Invoices } }}",
+        "options": {}
+      },
+      "id": "create-invoice",
+      "name": "Create Xero Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1780,
+        500
+      ],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoice = $input.first().json.Invoices[0];\nconst webhookData = $('Parse Webhook').first().json;\n\nreturn [{\n  json: {\n    customer: webhookData.customer,\n    order: webhookData.order,\n    bookingReference: 'TNER-' + new Date().toISOString().split('T')[0].replace(/-/g, '') + '-001', // Will be from Supabase later\n    invoiceNumber: invoice.InvoiceNumber,\n    invoiceID: invoice.InvoiceID,\n    total: invoice.Total\n  }\n}];"
+      },
+      "id": "prepare-notion-data",
+      "name": "Prepare Notion Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.srv1081114.hstgr.cloud/webhook/tner-create-notion-tasks",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "call-notion",
+      "name": "Create Notion Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2220,
+        500
+      ],
+      "notes": "Calls TNER - Create Notion Tasks workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoice = $('Create Xero Invoice').first().json.Invoices[0];\nconst notionResponse = $input.first().json;\n\nconst response = {\n  success: true,\n  invoiceID: invoice.InvoiceID,\n  invoiceNumber: invoice.InvoiceNumber,\n  total: invoice.Total,\n  notionTasksCreated: true,\n  deliveryTaskId: notionResponse.notionDeliveryTaskId,\n  collectionTaskId: notionResponse.notionCollectionTaskId\n};\n\nreturn [{ json: response }];"
+      },
+      "id": "final-response",
+      "name": "Format Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "return-success",
+      "name": "Return Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2660,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Xero Orgs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Xero Orgs": {
+      "main": [
+        [
+          {
+            "node": "Find ALWC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find ALWC": {
+      "main": [
+        [
+          {
+            "node": "Prepare Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Contact": {
+      "main": [
+        [
+          {
+            "node": "Create Xero Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Xero Contact": {
+      "main": [
+        [
+          {
+            "node": "Prepare Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Invoice": {
+      "main": [
+        [
+          {
+            "node": "Create Xero Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Xero Invoice": {
+      "main": [
+        [
+          {
+            "node": "Prepare Notion Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Notion Data": {
+      "main": [
+        [
+          {
+            "node": "Create Notion Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Notion Tasks": {
+      "main": [
+        [
+          {
+            "node": "Format Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Final Response": {
+      "main": [
+        [
+          {
+            "node": "Return Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 3600,
+    "timezone": "UTC"
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T05:32:08.848Z",
+    "n8nId": "bVKmKScvSBpqbHfl",
+    "active": true,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}

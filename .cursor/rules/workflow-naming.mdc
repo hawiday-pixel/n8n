@@ -1,0 +1,75 @@
+---
+alwaysApply: true
+---
+# n8n Workflow Naming Convention
+
+## Terminology
+
+| Term | Where it shows | Format |
+|------|----------------|--------|
+| **Filename** | File explorer / disk | `{company}-{short-description}.json` |
+| **Workflow name** | Inside JSON `"name"` field / n8n UI | `{COMPANY} \| {Category} \| {short-description}` |
+
+## Filename Format
+
+All workflow JSON files should be named using this pattern:
+
+```
+{company}-{short-description}.json
+```
+
+Example: `tner-auto-fix-reconciliation.json`
+
+## Workflow Name Format
+
+The **workflow name** (inside the JSON `"name"` field) should follow:
+
+```
+{COMPANY} | {Category} | {short-description}
+```
+
+Example: `TNER | Admin | auto-fix-reconciliation`
+
+## Companies
+
+There are only 3 companies:
+
+| Code |
+|------|
+| `HOZ` |
+| `TNER` |
+| `WRAP` |
+
+## Components
+
+| Component | Description | Example |
+|-----------|-------------|---------|
+| **COMPANY** | Uppercase company code (HOZ, TNER, WRAP) | `HOZ`, `TNER`, `WRAP` |
+| **Category** | The folder/workflow category | `Vendor-operation`, `Admin`, `Sales` |
+| **Short Description** | Brief purpose | `gate-supplier`, `admin-dashboard` |
+
+## Examples
+
+| File Path | Workflow Name |
+|-----------|---------------|
+| `vendor-operation/hoz-gate-order-to-supplier.json` | `HOZ \| Vendor-operation \| gate-supplier` |
+| `admin/tner-admin-dashboard.json` | `TNER \| Admin \| admin-dashboard` |
+| `sales/tner-whatsapp-rag-secure.json` | `TNER \| Sales \| whatsapp-rag` |
+
+## Folder Structure
+
+```
+workflows/
+├── admin/             # Administrative work: emails, data sorting, personal scheduling
+├── customer-service/  # After-sales support, customer issues, support tickets
+├── finance/           # Xero, invoicing, accounting
+├── human-resources/   # HR workflows, employee management
+├── legal/             # Legal documents, contracts, compliance
+├── marketing/         # Campaigns, promotions, social media, product scrapers
+├── operations/        # Job scheduling, ServiceM8
+├── sales/             # Sales consultation, prospecting, lead management
+├── shopify/           # E-commerce integrations
+├── technology/        # Internal workflows to improve efficiency
+├── utils/             # Generic utility workflows
+└── vendor-operation/  # Supplier/vendor workflows
+```

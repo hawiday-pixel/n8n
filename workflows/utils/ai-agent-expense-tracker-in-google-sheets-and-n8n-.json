@@ -335,11 +335,13 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "staticData": null,
   "meta": {
-    "exportedAt": "2025-12-06T05:32:08.849Z",
+    "exportedAt": "2025-12-06T09:18:53.486Z",
     "n8nId": "cUsqVLMo76szxKBW",
     "active": false,
     "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."

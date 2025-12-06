@@ -1,0 +1,228 @@
+{
+  "name": "ALL | Admin | email-classifier-setup",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Run Once to Create Labels",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Define all labels to create with nesting structure\nconst labels = [\n  // Core labels\n  { name: 'Processed' },\n  { name: 'Action-Required' },\n  \n  // Company labels\n  { name: 'HOZ' },\n  { name: 'TNER' },\n  { name: 'WRAP' },\n  \n  // Finance (parent)\n  { name: 'Finance' },\n  { name: 'Finance/Banking' },\n  { name: 'Finance/Receipts' },\n  { name: 'Finance/Crypto' },\n  \n  // Category labels\n  { name: 'Government' },\n  { name: 'Legal' },\n  { name: 'Tech' },\n  { name: 'Security' },\n  { name: 'Food' },\n  { name: 'Travel' },\n  { name: 'Shopping' },\n  { name: 'Learning' },\n  { name: 'Social' },\n  { name: 'Newsletters' },\n  { name: 'Promotions' },\n  { name: 'Other' }\n];\n\nreturn labels.map(label => ({ json: label }));"
+      },
+      "id": "code-labels",
+      "name": "Define Labels to Create",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "label",
+        "operation": "getAll"
+      },
+      "id": "gmail-get-existing",
+      "name": "Get Existing Labels",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REDACTED",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter out labels that already exist\nconst labelsToCreate = $('Define Labels to Create').all();\nconst existingLabels = $('Get Existing Labels').all();\n\n// Build set of existing label names (case-insensitive)\nconst existingNames = new Set(\n  existingLabels.map(item => item.json.name.toLowerCase())\n);\n\n// Filter to only labels that don't exist\nconst newLabels = labelsToCreate.filter(item => \n  !existingNames.has(item.json.name.toLowerCase())\n);\n\nconsole.log('Existing labels:', existingLabels.length);\nconsole.log('Labels to create:', newLabels.length);\nconsole.log('New labels:', newLabels.map(l => l.json.name).join(', '));\n\nif (newLabels.length === 0) {\n  // Return empty to skip creation\n  return [{ json: { message: 'All labels already exist!', created: 0 } }];\n}\n\nreturn newLabels;"
+      },
+      "id": "code-filter",
+      "name": "Filter New Labels",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-name",
+              "leftValue": "={{ $json.name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-labels",
+      "name": "Has Labels to Create?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "label",
+        "operation": "create",
+        "name": "={{ $json.name }}"
+      },
+      "id": "gmail-create-label",
+      "name": "Create Gmail Label",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1340,
+        200
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REDACTED",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconsole.log('✅ Created', items.length, 'labels');\nreturn [{ json: { message: 'Labels created successfully!', count: items.length } }];"
+      },
+      "id": "code-done",
+      "name": "Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// No new labels needed\nconsole.log('✅ All labels already exist!');\nreturn $input.all();"
+      },
+      "id": "code-skip",
+      "name": "All Labels Exist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Run Once to Create Labels": {
+      "main": [
+        [
+          {
+            "node": "Define Labels to Create",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Define Labels to Create": {
+      "main": [
+        [
+          {
+            "node": "Get Existing Labels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Labels": {
+      "main": [
+        [
+          {
+            "node": "Filter New Labels",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter New Labels": {
+      "main": [
+        [
+          {
+            "node": "Has Labels to Create?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Labels to Create?": {
+      "main": [
+        [
+          {
+            "node": "Create Gmail Label",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "All Labels Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Gmail Label": {
+      "main": [
+        [
+          {
+            "node": "Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T09:18:53.495Z",
+    "n8nId": "yBLwS6pnWO5PB5Xz",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}

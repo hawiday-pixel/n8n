@@ -1,0 +1,72 @@
+{
+  "name": "HAW | Utils | email-sampler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 100,
+        "filters": {},
+        "options": {}
+      },
+      "id": "gmail-get-emails",
+      "name": "Gmail - Get Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [460, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract key info from each email\nconst results = [];\n\nfor (const item of $input.all()) {\n  const email = item.json;\n  \n  // Extract headers\n  const headers = email.payload?.headers || [];\n  const getHeader = (name) => {\n    const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());\n    return header?.value || '';\n  };\n  \n  results.push({\n    json: {\n      id: email.id,\n      subject: getHeader('Subject'),\n      from: getHeader('From'),\n      to: getHeader('To'),\n      date: getHeader('Date'),\n      snippet: email.snippet?.substring(0, 150) || '',\n      labels: email.labelIds || []\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "code-extract",
+      "name": "Extract Email Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Get Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail - Get Emails": {
+      "main": [
+        [
+          {
+            "node": "Extract Email Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
+

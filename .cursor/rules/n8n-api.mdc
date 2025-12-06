@@ -1,0 +1,66 @@
+---
+created: 2025-12-06
+updated: 2025-12-06
+alwaysApply: true
+---
+
+# n8n Workflow Management
+
+## Important Concepts
+
+- **n8n has no folders** — workflows are a flat list in n8n
+- **Local folders** (`admin/`, `sales/`, etc.) are for local organization only
+- **Workflows are matched by `"name"` field** — changing the name creates a new workflow, not an update
+
+## API Access
+
+n8n API credentials are configured in `.env`. Use the provided scripts - they read credentials automatically via dotenv.
+
+## Four Types of Work
+
+### 1. Create New Workflow
+- Follow naming conventions in `workflow-naming.mdc`
+- Filename: `{company}-{short-description}.json`
+- Workflow name (JSON): `{COMPANY} | {Category} | {short-description}`
+- Place in appropriate category folder under `workflows/`
+- Deploy with: `node scripts/deploy.js <category>/<workflow-name>`
+
+### 2. Amend/Edit Existing Workflow
+- **Export first** to get the latest version from n8n
+- Edit the existing JSON file in place
+- **Do NOT create a new file** — modify the existing one
+- **Do NOT change the `"name"` field** — this will create a duplicate!
+- Deploy changes back to n8n
+
+### 3. Rename Workflow
+- **Do NOT change `"name"` in local JSON** — import will create duplicate
+- Use the rename script: `node scripts/rename.js "<old-name>" "<new-name>"`
+- This updates n8n directly using workflow ID
+- After renaming, run export to sync local files
+
+### 4. Delete Workflow
+- **ALWAYS ask for explicit user approval before deleting**
+- Never delete without confirmation
+
+## Script Reference
+
+| Script | Purpose |
+|--------|---------|
+| `node scripts/export-all.js` | Export all workflows from n8n to local files |
+| `node scripts/import-all.js` | Import all local workflows to n8n |
+| `node scripts/deploy.js <category>/<name>` | Deploy single workflow to n8n |
+| `node scripts/deploy.js <category>/<name> --activate` | Deploy and activate workflow |
+| `node scripts/rename.js "<old>" "<new>"` | Rename workflow in n8n by ID |
+
+## Standard Workflow
+
+1. **Export**: `node scripts/export-all.js` (get latest from n8n)
+2. **Edit**: Modify JSON file(s) as needed
+3. **Deploy**: `node scripts/deploy.js <category>/<workflow-name>`
+
+## Rules
+
+- **Do not ask for API credentials** — already configured in .env
+- **Run scripts from repo root** (`/Users/howweijie/n8n`)
+- **Never change `"name"` field directly** — use rename script instead
+- Match existing workflows by the `"name"` field in JSON

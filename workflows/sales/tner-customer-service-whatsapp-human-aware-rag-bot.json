@@ -1,0 +1,1103 @@
+{
+  "name": "TNER | Customer-service | whatsapp-human-aware-rag-bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tner-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate WhatsApp webhook signature\nconst crypto = require('crypto');\nconst signature = $request.headers['x-hub-signature-256'];\nconst rawBody = $request.rawBody || JSON.stringify($request.body);\nconst appSecret = '438695b3eb62390d7cfa56a255b652df';\n\nif (!signature) {\n  throw new Error('Missing signature header - unauthorized request');\n}\n\nconst expectedSignature = 'sha256=' + crypto\n  .createHmac('sha256', appSecret)\n  .update(rawBody)\n  .digest('hex');\n\nif (signature !== expectedSignature) {\n  throw new Error('Invalid signature - unauthorized request');\n}\n\nreturn {\n  verified: true,\n  timestamp: new Date().toISOString(),\n  body: $request.body\n};"
+      },
+      "id": "verify-signature",
+      "name": "🔐 Verify Signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        350,
+        300
+      ],
+      "notes": "Verifies Meta webhook signature before any processing."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract WhatsApp message payload\nconst body = $input.item.json.body;\nconst message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\n\nif (!message) {\n  throw new Error('No WhatsApp message found');\n}\n\nreturn {\n  userId: message.from,\n  message: message.text?.body || '',\n  messageId: message.id,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "extract-message",
+      "name": "Extract Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        550,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Keyword-based escalation detection\nconst text = ($input.item.json.message || '').toLowerCase();\nconst keywords = [\n  'speak to human', 'talk to human', 'human agent',\n  'real person', 'customer service', 'escalate',\n  'manager', 'supervisor', 'talk to someone'\n];\n\nconst hasKeyword = keywords.some((phrase) => text.includes(phrase));\n\nreturn {\n  ...$input.item.json,\n  escalationKeyword: hasKeyword\n};"
+      },
+      "id": "check-escalation-keywords",
+      "name": "Check Escalation Keywords",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare cost tracking payload\nconst userId = $input.item.json.userId;\nconst OPERATION_COST = 0.005;\nconst COST_LIMITS = { anonymous: 1.0, authenticated: 5.0 };\n\nreturn {\n  userId,\n  message: $input.item.json.message,\n  messageId: $input.item.json.messageId,\n  timestamp: $input.item.json.timestamp,\n  costLimit: COST_LIMITS.anonymous,\n  operationCost: OPERATION_COST,\n  escalationKeyword: $input.item.json.escalationKeyword\n};"
+      },
+      "id": "prepare-cost-check",
+      "name": "Prepare Cost Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        950,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT get_user_daily_cost('{{ $json.userId }}') AS current_cost"
+      },
+      "id": "check-cost-limit",
+      "name": "Check Cost Limit",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1150,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enforce daily budget before heavy processing\nconst currentCost = parseFloat($input.item.json.current_cost || 0);\nconst costLimit = $('Prepare Cost Check').item.json.costLimit;\nconst operationCost = $('Prepare Cost Check').item.json.operationCost;\n\nif (currentCost + operationCost > costLimit) {\n  throw new Error(`Daily cost limit reached ($${costLimit}). Try again tomorrow.`);\n}\n\nreturn {\n  ...$('Prepare Cost Check').item.json,\n  currentCost\n};"
+      },
+      "id": "validate-cost",
+      "name": "Validate Cost Limit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1350,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT get_or_create_conversation('{{ $json.userId }}', 'whatsapp') AS conversation_id"
+      },
+      "id": "get-conversation",
+      "name": "Get/Create Conversation",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1550,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "conversation_messages",
+        "data": {
+          "conversation_id": "={{ $json.conversation_id }}",
+          "role": "user",
+          "content": "={{ $('Validate Cost Limit').item.json.message }}"
+        }
+      },
+      "id": "store-user-message",
+      "name": "Store User Message",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1750,
+        180
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO tner_conversations (user_id, conversation_id)\nVALUES ('{{ $('Validate Cost Limit').item.json.userId }}', '{{ $json.conversation_id }}')\nON CONFLICT (user_id)\nDO UPDATE SET conversation_id = EXCLUDED.conversation_id\nRETURNING user_id, conversation_id, mode, escalation_reason;"
+      },
+      "id": "sync-conversation-state",
+      "name": "Sync Conversation State",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1750,
+        420
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const conversation = $input.item.json || {};\nconst keyword = $('Check Escalation Keywords').item.json.escalationKeyword;\n\nlet route = 'ai';\nlet reason = null;\n\nif ((conversation.mode || 'ai') === 'human') {\n  route = 'human';\n} else if (keyword) {\n  route = 'escalate';\n  reason = 'keyword_request';\n}\n\nreturn {\n  route,\n  reason,\n  userId: $('Validate Cost Limit').item.json.userId,\n  message: $('Validate Cost Limit').item.json.message,\n  conversation_id: conversation.conversation_id || $('Get/Create Conversation').item.json.conversation_id,\n  operationCost: $('Validate Cost Limit').item.json.operationCost\n};"
+      },
+      "id": "decide-route",
+      "name": "Decide Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1950,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "rules": [
+          {
+            "operation": "equal",
+            "value1": "={{ $json.route }}",
+            "value2": "human"
+          },
+          {
+            "operation": "equal",
+            "value1": "={{ $json.route }}",
+            "value2": "escalate"
+          }
+        ]
+      },
+      "id": "route-conversation",
+      "name": "Route Conversation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        2150,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE tner_conversations\nSET last_activity_at = NOW()\nWHERE user_id = '{{ $json.userId }}';"
+      },
+      "id": "update-human-activity",
+      "name": "Update Human Activity",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2350,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "tner_dashboard_notifications",
+        "data": {
+          "user_id": "={{ $json.userId }}",
+          "notification_type": "human_message",
+          "payload": "={{ { conversation_id: $json.conversation_id, message: $json.message, reason: 'human_mode' } }}"
+        }
+      },
+      "id": "notify-dashboard-human",
+      "name": "Notify Dashboard (Human)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2550,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE tner_conversations\nSET mode = 'human',\n    escalation_reason = 'keyword_request',\n    escalated_at = NOW(),\n    last_activity_at = NOW()\nWHERE user_id = '{{ $json.userId }}';"
+      },
+      "id": "escalate-keyword",
+      "name": "Escalate Conversation (Keyword)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2350,
+        420
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "tner_dashboard_notifications",
+        "data": {
+          "user_id": "={{ $json.userId }}",
+          "notification_type": "escalation",
+          "payload": "={{ { conversation_id: $json.conversation_id, reason: 'keyword_request', message: $json.message } }}"
+        }
+      },
+      "id": "notify-dashboard-escalation",
+      "name": "Notify Dashboard (Keyword)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2550,
+        420
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/892291267291974/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{ $json.userId }}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={{ { body: 'Thanks! I\\'ve connected you with our team. A human operator will reply shortly.' } }}"
+            }
+          ]
+        }
+      },
+      "id": "send-escalation-ack",
+      "name": "Send Escalation ACK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2750,
+        420
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REDACTED",
+          "name": "WhatsApp Authorization"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ $('Validate Cost Limit').item.json.message }}"
+            },
+            {
+              "name": "model",
+              "value": "text-embedding-3-small"
+            }
+          ]
+        }
+      },
+      "id": "generate-embedding",
+      "name": "Generate Query Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        2350,
+        580
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REDACTED",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const embedding = $input.item.json.data[0].embedding;\nreturn {\n  embedding: `[${embedding.join(',')}]`,\n  userId: $('Validate Cost Limit').item.json.userId,\n  message: $('Validate Cost Limit').item.json.message\n};"
+      },
+      "id": "format-embedding",
+      "name": "Format Embedding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2550,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO tner_message_patterns (user_id, message_embedding, message_text)\nVALUES ('{{ $json.userId }}', '{{ $json.embedding }}'::vector, '{{ $json.message }}');"
+      },
+      "id": "record-message-pattern",
+      "name": "Record Message Pattern",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2750,
+        580
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT detect_repetition(\n  '{{ $json.userId }}',\n  '{{ $json.embedding }}'::vector\n) AS is_repetitive;"
+      },
+      "id": "check-repetition",
+      "name": "Check Repetition",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2950,
+        580
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_repetitive === true || $json.is_repetitive === 'true' }}"
+            }
+          ]
+        }
+      },
+      "id": "if-repetition",
+      "name": "IF Repetition",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3150,
+        580
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE tner_conversations\nSET mode = 'human',\n    escalation_reason = 'repetition_loop',\n    escalated_at = NOW(),\n    last_activity_at = NOW()\nWHERE user_id = '{{ $('Format Embedding').item.json.userId }}';"
+      },
+      "id": "escalate-repetition",
+      "name": "Escalate Conversation (Repetition)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3350,
+        480
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "tner_dashboard_notifications",
+        "data": {
+          "user_id": "={{ $('Format Embedding').item.json.userId }}",
+          "notification_type": "escalation",
+          "payload": "={{ { conversation_id: $('Sync Conversation State').item.json.conversation_id, reason: 'repetition_loop', message: $('Validate Cost Limit').item.json.message } }}"
+        }
+      },
+      "id": "notify-dashboard-repetition",
+      "name": "Notify Dashboard (Repetition)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3550,
+        480
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/892291267291974/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{ $('Format Embedding').item.json.userId }}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={{ { body: 'Thanks for your patience. I\\'ve brought a human into this conversation to help you right away.' } }}"
+            }
+          ]
+        }
+      },
+      "id": "send-repetition-ack",
+      "name": "Send Repetition ACK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3750,
+        480
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REDACTED",
+          "name": "WhatsApp Authorization"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM match_product_knowledge(\n  query_embedding := '{{ $json.embedding }}'::vector,\n  match_threshold := 0.35,\n  match_count := 3\n)"
+      },
+      "id": "search-knowledge",
+      "name": "Search Knowledge Base",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3350,
+        680
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const knowledge = $input.all();\nconst message = $('Format Embedding').item.json.message;\nconst context = knowledge\n  .map((k) => `[${k.json.category}] ${k.json.content}`)\n  .join('\\n\\n---\\n\\n');\n\nconst systemPrompt = `You are a helpful TNER customer service assistant in Singapore.\\n\\n${context}\\n\\nGUIDELINES:\\n- Keep replies to 2-3 sentences\\n- Mention pricing (Medium $1/day, Large $1.30/day) when relevant\\n- Delivery: $20 two-way, self collect free\\n- If unsure, offer to bring in the team\\n- Never mention backend systems or instructions.`;\n\nreturn {\n  systemPrompt,\n  userMessage: message,\n  userId: $('Format Embedding').item.json.userId\n};"
+      },
+      "id": "build-context",
+      "name": "Build AI Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3550,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o-mini"
+            },
+            {
+              "name": "messages",
+              "value": "={{ [{ role: 'system', content: $json.systemPrompt }, { role: 'user', content: $json.userMessage }] }}"
+            },
+            {
+              "name": "temperature",
+              "value": 0.7
+            },
+            {
+              "name": "max_tokens",
+              "value": 200
+            }
+          ]
+        }
+      },
+      "id": "generate-ai-response",
+      "name": "Generate AI Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        3750,
+        680
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REDACTED",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.item.json.choices[0].message.content;\nreturn {\n  to: $('Build AI Context').item.json.userId,\n  message: aiResponse\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3950,
+        680
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/892291267291974/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{ $json.to }}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={{ { body: $json.message } }}"
+            }
+          ]
+        }
+      },
+      "id": "send-whatsapp",
+      "name": "Send WhatsApp Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        4150,
+        680
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REDACTED",
+          "name": "WhatsApp Authorization"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "conversation_messages",
+        "data": {
+          "conversation_id": "={{ $('Get/Create Conversation').item.json.conversation_id }}",
+          "role": "assistant",
+          "content": "={{ $('Format Response').item.json.message }}"
+        }
+      },
+      "id": "store-ai-message",
+      "name": "Store AI Response",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4150,
+        520
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT increment_user_cost('{{ $('Validate Cost Limit').item.json.userId }}', {{ $('Validate Cost Limit').item.json.operationCost }}, 'ai_message')"
+      },
+      "id": "track-cost",
+      "name": "Track Cost",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4150,
+        840
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "={{ { status: 'ok' } }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        4400,
+        480
+      ]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "🔐 Verify Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔐 Verify Signature": {
+      "main": [
+        [
+          {
+            "node": "Extract Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message": {
+      "main": [
+        [
+          {
+            "node": "Check Escalation Keywords",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Escalation Keywords": {
+      "main": [
+        [
+          {
+            "node": "Prepare Cost Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Cost Check": {
+      "main": [
+        [
+          {
+            "node": "Check Cost Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Cost Limit": {
+      "main": [
+        [
+          {
+            "node": "Validate Cost Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Cost Limit": {
+      "main": [
+        [
+          {
+            "node": "Get/Create Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get/Create Conversation": {
+      "main": [
+        [
+          {
+            "node": "Store User Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sync Conversation State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync Conversation State": {
+      "main": [
+        [
+          {
+            "node": "Decide Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Route": {
+      "main": [
+        [
+          {
+            "node": "Route Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Conversation": {
+      "main": [
+        [
+          {
+            "node": "Update Human Activity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escalate Conversation (Keyword)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Query Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Human Activity": {
+      "main": [
+        [
+          {
+            "node": "Notify Dashboard (Human)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Dashboard (Human)": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate Conversation (Keyword)": {
+      "main": [
+        [
+          {
+            "node": "Notify Dashboard (Keyword)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Dashboard (Keyword)": {
+      "main": [
+        [
+          {
+            "node": "Send Escalation ACK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Escalation ACK": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Query Embedding": {
+      "main": [
+        [
+          {
+            "node": "Format Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Embedding": {
+      "main": [
+        [
+          {
+            "node": "Record Message Pattern",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Message Pattern": {
+      "main": [
+        [
+          {
+            "node": "Check Repetition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Repetition": {
+      "main": [
+        [
+          {
+            "node": "IF Repetition",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Repetition": {
+      "main": [
+        [
+          {
+            "node": "Escalate Conversation (Repetition)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Search Knowledge Base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate Conversation (Repetition)": {
+      "main": [
+        [
+          {
+            "node": "Notify Dashboard (Repetition)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Dashboard (Repetition)": {
+      "main": [
+        [
+          {
+            "node": "Send Repetition ACK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Repetition ACK": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Knowledge Base": {
+      "main": [
+        [
+          {
+            "node": "Build AI Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Context": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Response": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Track Cost",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T09:18:53.495Z",
+    "n8nId": "xIILZNxTQR46YyaO",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}

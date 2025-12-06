@@ -1,5 +1,5 @@
 {
-  "name": "Tner - Admin Dashboard",
+  "name": "TNER | Admin | dashboard",
   "nodes": [
     {
       "parameters": {
@@ -245,11 +245,13 @@
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "staticData": null,
   "meta": {
-    "exportedAt": "2025-12-06T05:32:08.844Z",
+    "exportedAt": "2025-12-06T09:18:53.482Z",
     "n8nId": "3JvVWefQpsnwX1C7",
     "active": false,
     "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."

@@ -1,0 +1,316 @@
+{
+  "name": "TNER | Sales | travel-reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate tomorrow's date\nconst tomorrow = new Date();\ntomorrow.setDate(tomorrow.getDate() + 1);\nconst tomorrowStr = tomorrow.toISOString().split('T')[0];\n\nreturn [{ json: { tomorrow: tomorrowStr } }];"
+      },
+      "id": "calc-tomorrow",
+      "name": "Calculate Tomorrow",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT c.id, c.customer_phone, c.customer_name, c.customer_email, cm.metadata FROM conversations c LEFT JOIN ( SELECT conversation_id, metadata FROM conversation_messages WHERE sender = 'ai' AND message_text LIKE '%READY_TO_BOOK%' ORDER BY timestamp DESC LIMIT 1 ) cm ON c.id = cm.conversation_id WHERE c.order_created = true AND c.status = 'completed' AND DATE(cm.metadata->>'travel_start_date') = DATE('={{ $json.tomorrow }}') AND (cm.metadata->>'reminder_sent')::boolean IS NOT TRUE",
+        "options": {}
+      },
+      "id": "find-reminders",
+      "name": "Find Tomorrow's Travelers",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        680,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $input.all().length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-results",
+      "name": "Has Reminders?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse booking data from metadata\nconst item = $input.first().json;\nconst metadata = typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;\n\n// Extract booking details\nconst bookingData = metadata.booking_data || {};\n\nreturn [{\n  json: {\n    conversation_id: item.id,\n    customer_phone: item.customer_phone,\n    customer_name: item.customer_name || 'there',\n    travel_start_date: bookingData.travel_start_date || metadata.travel_start_date,\n    travel_end_date: bookingData.travel_end_date || metadata.travel_end_date,\n    delivery_address: bookingData.delivery_address || 'your specified address',\n    items: bookingData.items || [],\n    delivery_time: bookingData.delivery_time || '9am-6pm'\n  }\n}];"
+      },
+      "id": "parse-booking",
+      "name": "Parse Booking Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "content": "=🎒 Hi {{ $json.customer_name }}!\n\nYour Tner luggage rental starts tomorrow!\n📅 {{ $json.travel_start_date }}\n\n📦 Your items:\n{{ $json.items.map(i => `• ${i.product_name} × ${i.quantity}`).join('\\n') }}\n\n📍 Delivery address:\n{{ $json.delivery_address }}\n\n⏰ Delivery window: {{ $json.delivery_time }}\n\nOur team will contact you 30 minutes before arrival. Please ensure someone is available to receive the luggage.\n\nSafe travels! ✈️ Reply if you need anything.",
+        "options": {}
+      },
+      "id": "format-message",
+      "name": "Format Reminder Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_WHATSAPP_API_ENDPOINT",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "to",
+              "value": "={{ $json.customer_phone }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $('Format Reminder Message').item.json.content }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-whatsapp",
+      "name": "Send WhatsApp Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1560,
+        360
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REDACTED",
+          "name": "WhatsApp API"
+        }
+      },
+      "notes": "Configure with your WhatsApp Business API credentials"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "conversation_messages",
+        "updateKey": "conversation_id",
+        "columns": {
+          "mappings": [
+            {
+              "column": "metadata",
+              "value": "={{ JSON.stringify({ ...JSON.parse($json.metadata), reminder_sent: true, reminder_sent_at: new Date().toISOString() }) }}"
+            }
+          ]
+        },
+        "conditions": {
+          "conditions": [
+            {
+              "key": "conversation_id",
+              "value": "={{ $('Parse Booking Data').item.json.conversation_id }}"
+            }
+          ]
+        }
+      },
+      "id": "mark-sent",
+      "name": "Mark Reminder Sent",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        360
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summary of reminders sent\nconst items = $input.all();\n\nreturn [{\n  json: {\n    success: true,\n    reminders_sent: items.length,\n    timestamp: new Date().toISOString(),\n    message: `Successfully sent ${items.length} travel reminders`\n  }\n}];"
+      },
+      "id": "summary",
+      "name": "Create Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    success: true,\n    reminders_sent: 0,\n    message: 'No reminders to send today'\n  }\n}];"
+      },
+      "id": "no-reminders",
+      "name": "No Reminders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Calculate Tomorrow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Tomorrow": {
+      "main": [
+        [
+          {
+            "node": "Find Tomorrow's Travelers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Tomorrow's Travelers": {
+      "main": [
+        [
+          {
+            "node": "Has Reminders?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Reminders?": {
+      "main": [
+        [
+          {
+            "node": "Parse Booking Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Booking Data": {
+      "main": [
+        [
+          {
+            "node": "Format Reminder Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Reminder Message": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Reminder": {
+      "main": [
+        [
+          {
+            "node": "Mark Reminder Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Reminder Sent": {
+      "main": [
+        [
+          {
+            "node": "Create Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T09:18:53.482Z",
+    "n8nId": "3hEQoO1ccN4yUmWJ",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}

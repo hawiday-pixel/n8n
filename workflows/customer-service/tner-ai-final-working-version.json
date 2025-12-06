@@ -1,0 +1,170 @@
+{
+  "name": "TNER | Customer-service | ai-final-working-version",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        -80
+      ],
+      "id": "2efc552f-b374-4c0e-bc6c-f55cdfa37e09",
+      "name": "WhatsApp Trigger",
+      "webhookId": "2c70190e-bf9d-414f-a08c-95dfdf7ee1cc",
+      "credentials": {
+        "whatsAppTriggerApi": {
+          "id": "REDACTED",
+          "name": "86846191"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.messages[0].text.body }}",
+        "options": {
+          "systemMessage": "You are Tner's luggage rental assistant. Help customers rent luggage for their trips.\n\nACTUAL PRODUCTS & PRICING (from tner.sg):\n• Medium Luggage (24 inch/Green): $1.00 per day\n• Large Luggage (28 inch/Black): $1.30 per day\n\nADD-ONS AVAILABLE ($10 each):\n• Toiletries set\n• Powerbank rental\n• Mosquito repellent  \n• Inflatable pillow\n• Earplugs\n• Camera detector\n• Towel (FREE)\n\nDELIVERY & COLLECTION:\n• Self-collection: FREE at 113 Eunos Ave 3, #01-06, Singapore 409838\n  (5 min walk from Paya Lebar MRT)\n• Two-way delivery: $20 flat rate\n\nOPERATING HOURS:\n• 11am - 8pm Daily\n• Phone: +65 9021 6926\n• Email: Shop@tner.sg\n\nRENTAL PROCESS:\n1. Customer chooses luggage size\n2. Provides travel dates\n3. Choose self-collect or delivery ($20)\n4. We calculate total (days × daily rate + delivery if needed)\n5. Customer pays\n6. Collect/receive luggage\n7. Travel and return after trip\n\nBe warm, helpful, and eco-conscious. Emphasize:\n- Affordable rental vs buying\n- Environmental benefits  \n- Hygiene (we change linings after each use)\n- Maintenance and quality checks\n- Claim support if damage abroad\n\nAsk clarifying questions about trip duration and whether they want delivery or self-collection to give accurate quotes."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        32,
+        -80
+      ],
+      "id": "414fc2c7-3723-482c-9384-5c33ab6cc2d1",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "gpt-5"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -112,
+        128
+      ],
+      "id": "196d2790-c862-4fe3-8235-e021fae23450",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "REDACTED",
+          "name": "HAW_AI_DESK_DEV"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "892291267291974",
+        "recipientPhoneNumber": "={{ $('WhatsApp Trigger').item.json.messages[0].from }}",
+        "textBody": "={{ $json.output }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        384,
+        -80
+      ],
+      "id": "485f0b32-2554-4280-a68d-f5dd81a1c8cc",
+      "name": "Send message",
+      "webhookId": "83ce8e47-7c66-44a3-ac59-c07c27fbd9e8",
+      "credentials": {
+        "whatsAppApi": {
+          "id": "REDACTED",
+          "name": "WhatsApp account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTool",
+      "typeVersion": 4.7,
+      "position": [
+        192,
+        128
+      ],
+      "id": "69c923eb-8115-402d-9d05-9007d6f0ef94",
+      "name": "Create spreadsheet in Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Send message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create spreadsheet in Google Sheets": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T05:32:08.852Z",
+    "n8nId": "vGXze5Hmgo9vLw5A",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}

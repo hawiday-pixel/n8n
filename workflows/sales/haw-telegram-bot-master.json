@@ -420,11 +420,13 @@
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "all",
     "executionTimeout": 3600,
-    "timezone": "UTC"
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "staticData": null,
   "meta": {
-    "exportedAt": "2025-12-06T05:32:08.853Z",
+    "exportedAt": "2025-12-06T09:18:53.494Z",
     "n8nId": "wknU2j31OezyjY3c",
     "active": false,
     "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."

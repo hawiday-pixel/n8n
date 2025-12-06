@@ -1,0 +1,187 @@
+{
+  "name": "TNER | Admin | populate-knowledge-base",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "=/workspace/tner-ai-assistant/tner-product-knowledge.json",
+        "options": {}
+      },
+      "id": "read-binary-file",
+      "name": "Read Product Knowledge File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the JSON file and split into individual documents\nconst fileContent = $input.first().json;\nconst documents = fileContent.documents;\n\n// Return each document as a separate item for processing\nreturn documents.map(doc => ({\n  json: doc\n}));"
+      },
+      "id": "parse-documents",
+      "name": "Parse Documents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-ada-002",
+        "text": "={{ $json.content }}"
+      },
+      "id": "openai-embeddings",
+      "name": "Generate Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "REDACTED",
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "product_knowledge",
+        "columns": {
+          "mappings": [
+            {
+              "column": "content",
+              "value": "={{ $json.content }}"
+            },
+            {
+              "column": "embedding",
+              "value": "={{ JSON.stringify($json.embedding) }}"
+            },
+            {
+              "column": "metadata",
+              "value": "={{ JSON.stringify($json.metadata) }}"
+            },
+            {
+              "column": "product_id",
+              "value": "={{ $json.metadata.product_id }}"
+            },
+            {
+              "column": "category",
+              "value": "={{ $json.metadata.category }}"
+            }
+          ]
+        }
+      },
+      "id": "supabase-insert",
+      "name": "Insert into Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summary of knowledge base population\nconst items = $input.all();\nconst totalInserted = items.length;\n\nconst summary = {\n  success: true,\n  total_documents: totalInserted,\n  categories: {},\n  message: `Successfully populated knowledge base with ${totalInserted} documents`\n};\n\n// Count by category\nitems.forEach(item => {\n  const category = item.json.category || 'unknown';\n  summary.categories[category] = (summary.categories[category] || 0) + 1;\n});\n\nreturn [{ json: summary }];"
+      },
+      "id": "summary-node",
+      "name": "Create Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Product Knowledge File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Product Knowledge File": {
+      "main": [
+        [
+          {
+            "node": "Parse Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Documents": {
+      "main": [
+        [
+          {
+            "node": "Generate Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Insert into Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert into Supabase": {
+      "main": [
+        [
+          {
+            "node": "Create Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T05:32:08.845Z",
+    "n8nId": "3x2MdUqoUrn1AMfh",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}
