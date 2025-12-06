@@ -1,0 +1,27 @@
+# Credentials - never commit actual credentials
+credentials/*.json
+!credentials/templates/*.json
+
+# n8n exports with sensitive data
+*.credentials.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Node (if scripts use dependencies)
+node_modules/
+package-lock.json
+
+# Logs
+*.log
+
