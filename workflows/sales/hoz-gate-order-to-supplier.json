@@ -1,0 +1,469 @@
+{
+  "name": "HOZ - Gate Order to Supplier",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hoz-gate-supplier",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook - New Invoice",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        304
+      ],
+      "webhookId": "d2b2cf5b-6d3e-4478-ae64-de06b9bd2c23"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the webhook body\nconst webhookData = $input.item.json;\nconst body = webhookData.body || webhookData;\n\n// Extract invoice data\nconst invoiceNumber = body.invoiceNumber || body.InvoiceNumber;\nconst invoiceId = body.invoiceId || body.InvoiceID || body.invoiceId;\n\n// Debug log\nconsole.log('Webhook data:', JSON.stringify(webhookData, null, 2));\nconsole.log('Body:', JSON.stringify(body, null, 2));\nconsole.log('Invoice Number:', invoiceNumber);\nconsole.log('Invoice ID:', invoiceId);\n\n// Return the data\nreturn {\n  invoiceNumber: invoiceNumber,\n  invoiceId: invoiceId\n};"
+      },
+      "id": "extract",
+      "name": "Extract Invoice Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.xero.com/connections",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-orgs",
+      "name": "Get Xero Organizations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        688,
+        304
+      ],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const hoz = $input.all().find(c => c.json.tenantName?.toUpperCase().includes('HOZ'));\nif (!hoz) throw new Error('HOZ organization not found in Xero');\nreturn { tenantId: hoz.json.tenantId };"
+      },
+      "id": "find-hoz",
+      "name": "Find HOZ Tenant",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.xero.com/api.xro/2.0/Invoices/{{ $('Extract Invoice Data').item.json.invoiceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xero-tenant-id",
+              "value": "={{ $json.tenantId }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-invoice",
+      "name": "Get Xero Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        304
+      ],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoice = $input.item.json.Invoices[0];\nconst contact = invoice.Contact || {};\nconst lineItems = invoice.LineItems || [];\n\nconst gateItems = lineItems.filter(i => {\n  const d = (i.Description || '').toLowerCase();\n  return d.includes('gate') || d.includes('swing') || d.includes('sliding');\n});\n\nif (gateItems.length === 0) throw new Error('No gate items found in invoice');\n\nconst addr = (contact.Addresses || [])[0] || {};\nconst phones = contact.Phones || [];\nconst phone = (phones.find(p => p.PhoneType === 'MOBILE')?.PhoneNumber || \n               phones.find(p => p.PhoneType === 'DEFAULT')?.PhoneNumber || '')\n              .replace(/[\\s\\-\\+]/g, '').replace(/^65/, '');\n\nconst formatDate = (d) => {\n  const date = new Date(d);\n  return `${date.getDate()} ${date.toLocaleString('en', {month: 'long'})} ${date.getFullYear()}`;\n};\n\nconst desc = gateItems[0].Description || '';\nconst descLower = desc.toLowerCase();\n\n// UPDATED: Accept both underscore and hyphen (HOZ_MSG_002 or HOZ-MSG-002)\nconst productCodeMatch = desc.match(/HOZ[-_][A-Z]{3}[-_]\\d{3}/i);\n// Normalize to hyphen format for Supabase\nconst productCode = productCodeMatch ? productCodeMatch[0].toUpperCase().replace(/_/g, '-') : '';\n\nconst sizeMatch = desc.match(/(\\d+)\\s*[xX×]\\s*(\\d+)/);\nconst colourMatch = desc.match(/\\b(black|white|brown|grey|gray|silver|bronze|gold)\\b/i);\n\nconst features = {\n  hasDigitalLockGate: descLower.includes('digital lock') && descLower.includes('gate'),\n  hasDigitalLockDoor: descLower.includes('digital lock') && descLower.includes('door'),\n  hasLockset: descLower.includes('lockset'),\n  hasNumberPlate: descLower.includes('number plate') || descLower.includes('plate'),\n  hasEarLoop: descLower.includes('ear loop') || descLower.includes('pad lock'),\n  hasWoodenDoor: descLower.includes('wooden door') || descLower.includes('change door'),\n  hasBottomPanel: descLower.includes('bottom panel'),\n  hasRollerLatch: descLower.includes('roller latch')\n};\n\nreturn {\n  invoiceNumber: invoice.InvoiceNumber,\n  invoiceId: invoice.InvoiceID,\n  invoiceDate: invoice.Date,\n  customerName: contact.Name || '',\n  mobile: phone,\n  email: contact.EmailAddress || '',\n  addressBlock: addr.AddressLine1 || '',\n  addressStreet: addr.AddressLine2 || '',\n  addressUnit: addr.AddressLine3 || '',\n  postalCode: addr.PostalCode || '',\n  fullAddress: [addr.AddressLine1, addr.AddressLine2, addr.AddressLine3, \n                addr.PostalCode ? `S(${addr.PostalCode})` : '']\n               .filter(Boolean).join(', '),\n  productCode: productCode,\n  productDescription: desc,\n  gateSize: sizeMatch ? `${sizeMatch[1]}FT x ${sizeMatch[2]}FT` : '',\n  colour: colourMatch ? colourMatch[1].toUpperCase() : '',\n  houseType: descLower.includes('hdb') ? 'HDB' : descLower.includes('condo') ? 'CONDO' : descLower.includes('landed') ? 'LANDED' : '',\n  slType: (descLower.includes('ud/l') || descLower.includes('up down')) ? 'UD/L' : 'S/L',\n  installationDate: formatDate(invoice.DueDate || invoice.Date),\n  ...features,\n  tenantId: $('Find HOZ Tenant').item.json.tenantId\n};"
+      },
+      "id": "parse",
+      "name": "Parse Invoice Details",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery"
+      },
+      "id": "get-image",
+      "name": "Get Gate Image",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1568,
+        304
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase"
+        }
+      },
+      "notes": "Fetch gate image from Supabase by product code"
+    },
+    {
+      "parameters": {
+        "jsCode": "const imageData = $input.item.json[0] || {};\nconst imageUrl = imageData.image_url || 'https://via.placeholder.com/800x1200/32a9f9/FFFFFF/?text=' + $('Parse Invoice Details').item.json.productCode;\n\nreturn {\n  imageUrl: imageUrl,\n  hasRealImage: !!imageData.image_url\n};"
+      },
+      "id": "extract-image",
+      "name": "Extract Image URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "copy",
+        "fileId": {
+          "__rl": true,
+          "value": "12roNXFaf2GzwjGUPBAwCQGs3BHjgeuZB",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "copy-sheet",
+      "name": "Copy Order Template",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2000,
+        304
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "fill-cells",
+      "name": "Fill Order Details",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        2224,
+        304
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $('Copy Order Template').item.json.id }}:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "requests",
+              "value": "={{ JSON.stringify([{\n  insertInlineImage: {\n    location: {\n      sheetId: 0,\n      rowIndex: 17,\n      columnIndex: 0\n    },\n    uri: $('Extract Image URL').item.json.imageUrl,\n    objectSize: {\n      width: {magnitude: 400, unit: 'PIXEL'},\n      height: {magnitude: 600, unit: 'PIXEL'}\n    }\n  }\n}]) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "insert-image",
+      "name": "Insert Gate Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2448,
+        304
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://docs.google.com/spreadsheets/d/{{ $('Copy Order Template').item.json.id }}/export?format=pdf&portrait=false&size=A4",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "export-pdf",
+      "name": "Export to PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2672,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "397780826",
+        "text": "=🚪 New Gate Order for Supplier\n\n📋 Invoice: {{ $('Parse Invoice Details').item.json.invoiceNumber }}\n👤 Customer: {{ $('Parse Invoice Details').item.json.customerName }}\n📍 {{ $('Parse Invoice Details').item.json.fullAddress }}\n🏠 {{ $('Parse Invoice Details').item.json.houseType }}\n🚪 {{ $('Parse Invoice Details').item.json.productCode }} - {{ $('Parse Invoice Details').item.json.gateSize }}\n🎨 {{ $('Parse Invoice Details').item.json.colour }}\n📅 {{ $('Parse Invoice Details').item.json.installationDate }}\n\nSee attached PDF for complete order details.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "send-message",
+      "name": "Send Telegram Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2880,
+        304
+      ],
+      "webhookId": "f5f7bd99-d93f-4310-a763-df65a78a5596",
+      "credentials": {
+        "telegramApi": {
+          "id": "REDACTED",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "397780826",
+        "text": "pdf",
+        "additionalFields": {}
+      },
+      "id": "send-pdf",
+      "name": "Send PDF",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3104,
+        304
+      ],
+      "webhookId": "55e9d0b0-58f1-43c5-92b0-68ff37e5fcba",
+      "credentials": {
+        "telegramApi": {
+          "id": "REDACTED",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  success: true,\n  message: 'Gate order sent to Telegram',\n  invoiceNumber: $('Parse Invoice Details').item.json.invoiceNumber,\n  productCode: $('Parse Invoice Details').item.json.productCode,\n  sheetUrl: 'https://docs.google.com/spreadsheets/d/' + $('Copy Order Template').item.json.id,\n  hasRealImage: $('Extract Image URL').item.json.hasRealImage\n} }}",
+        "options": {}
+      },
+      "id": "success",
+      "name": "Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3328,
+        304
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - New Invoice": {
+      "main": [
+        [
+          {
+            "node": "Extract Invoice Data"
+          }
+        ]
+      ]
+    },
+    "Extract Invoice Data": {
+      "main": [
+        [
+          {
+            "node": "Get Xero Organizations"
+          }
+        ]
+      ]
+    },
+    "Get Xero Organizations": {
+      "main": [
+        [
+          {
+            "node": "Find HOZ Tenant"
+          }
+        ]
+      ]
+    },
+    "Find HOZ Tenant": {
+      "main": [
+        [
+          {
+            "node": "Get Xero Invoice"
+          }
+        ]
+      ]
+    },
+    "Get Xero Invoice": {
+      "main": [
+        [
+          {
+            "node": "Parse Invoice Details"
+          }
+        ]
+      ]
+    },
+    "Parse Invoice Details": {
+      "main": [
+        [
+          {
+            "node": "Get Gate Image"
+          },
+          {
+            "node": "Copy Order Template"
+          }
+        ]
+      ]
+    },
+    "Get Gate Image": {
+      "main": [
+        [
+          {
+            "node": "Extract Image URL"
+          }
+        ]
+      ]
+    },
+    "Extract Image URL": {
+      "main": [
+        [
+          {
+            "node": "Insert Gate Image"
+          }
+        ]
+      ]
+    },
+    "Copy Order Template": {
+      "main": [
+        [
+          {
+            "node": "Fill Order Details"
+          }
+        ]
+      ]
+    },
+    "Fill Order Details": {
+      "main": [
+        [
+          {
+            "node": "Insert Gate Image"
+          }
+        ]
+      ]
+    },
+    "Insert Gate Image": {
+      "main": [
+        [
+          {
+            "node": "Export to PDF"
+          }
+        ]
+      ]
+    },
+    "Export to PDF": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message"
+          }
+        ]
+      ]
+    },
+    "Send Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Send PDF"
+          }
+        ]
+      ]
+    },
+    "Send PDF": {
+      "main": [
+        [
+          {
+            "node": "Success"
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T05:32:08.850Z",
+    "n8nId": "lpteFmkIzJpxhoWc",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}

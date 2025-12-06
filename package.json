@@ -1,0 +1,29 @@
+{
+  "name": "n8n",
+  "version": "1.0.0",
+  "description": "--- created: 2024-12-06 updated: 2024-12-06 ---",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "export": "node scripts/export-all.js",
+    "import": "node scripts/import-all.js",
+    "backup": "node scripts/backup-to-github.js",
+    "deploy": "node scripts/deploy.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hawiday-pixel/n8n.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hawiday-pixel/n8n/issues"
+  },
+  "homepage": "https://github.com/hawiday-pixel/n8n#readme",
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  }
+}

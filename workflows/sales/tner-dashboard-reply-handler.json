@@ -1,0 +1,220 @@
+{
+  "name": "TNER Dashboard Reply Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": [
+          {
+            "mode": "everyMinute",
+            "minuteInterval": 1
+          }
+        ]
+      },
+      "id": "cron",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM tner_operator_replies\nWHERE status = 'pending'\nORDER BY created_at ASC\nLIMIT 25;"
+      },
+      "id": "fetch-pending",
+      "name": "Fetch Pending Replies",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/892291267291974/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{ $json.user_id }}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={{ { body: $json.message } }}"
+            }
+          ]
+        }
+      },
+      "id": "send-whatsapp",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        600,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REDACTED",
+          "name": "WhatsApp Authorization"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE tner_operator_replies\nSET status = 'sent', sent_at = NOW()\nWHERE id = '{{ $json.id }}';"
+      },
+      "id": "mark-sent",
+      "name": "Mark Reply Sent",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        800,
+        260
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_messages (conversation_id, role, content)\nSELECT c.id, 'assistant', '{{ $json.message }}'\nFROM conversations c\nWHERE c.user_id = '{{ $json.user_id }}'\nORDER BY c.last_message_at DESC\nLIMIT 1;"
+      },
+      "id": "log-message",
+      "name": "Log Message",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        800,
+        360
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE tner_conversations\nSET last_activity_at = NOW()\nWHERE user_id = '{{ $json.user_id }}';"
+      },
+      "id": "touch-conversation",
+      "name": "Touch Conversation",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REDACTED",
+          "name": "Supabase TNER"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Fetch Pending Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Pending Replies": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Reply": {
+      "main": [
+        [
+          {
+            "node": "Mark Reply Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Reply Sent": {
+      "main": [
+        [
+          {
+            "node": "Touch Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Message": {
+      "main": [
+        [
+          {
+            "node": "Touch Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T05:32:08.848Z",
+    "n8nId": "Db2Q0Tl04UAWVZIU",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}

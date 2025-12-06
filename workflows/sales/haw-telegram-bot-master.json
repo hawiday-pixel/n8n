@@ -1,0 +1,432 @@
+{
+  "name": "HAW - Telegram Bot (Master)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        256,
+        304
+      ],
+      "webhookId": "telegram-commands",
+      "id": "tg-trigger",
+      "credentials": {
+        "telegramApi": {
+          "id": "REDACTED",
+          "name": "Hawdybot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "auth-check",
+              "leftValue": "={{ $json.message.chat.id }}",
+              "rightValue": "397780826",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Security Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        464,
+        304
+      ],
+      "id": "security"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "🚫 Unauthorized Access\n\nThis bot is private and only accessible to authorized users.\n\nYour attempt has been logged.",
+        "additionalFields": {}
+      },
+      "name": "Reject Unauthorized",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        656,
+        400
+      ],
+      "id": "reject",
+      "webhookId": "79d577e0-6ab3-40a9-ac6d-8fbe621ff9d0",
+      "credentials": {
+        "telegramApi": {
+          "id": "REDACTED",
+          "name": "Hawdybot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "leftValue": "",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Route Command",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        656,
+        208
+      ],
+      "id": "router"
+    },
+    {
+      "parameters": {
+        "url": "https://identity.xero.com/connect/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Basic N0U1MDIzREJFMThGNDU5Q0JCRDU1RDVBNzhDMjZFNzUyOlJHYWI3TmVad295V2hySTItWC1qcURnTTRiaEFrODdnV09GeTB6b055UTl0UXpH"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            },
+            {
+              "name": "refresh_token",
+              "value": "E21LWjbTOK7egJNR6poVK7ABH_YBCHiJAHLLRfcc2sY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Refresh Xero Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        864,
+        112
+      ],
+      "id": "refresh"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "token",
+              "name": "accessToken",
+              "value": "={{ $json.access_token }}",
+              "type": "string"
+            },
+            {
+              "id": "cmd",
+              "name": "command",
+              "value": "={{ $('Telegram Trigger').item.json.message.text }}",
+              "type": "string"
+            },
+            {
+              "id": "chat",
+              "name": "chatId",
+              "value": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1056,
+        160
+      ],
+      "id": "prep"
+    },
+    {
+      "parameters": {
+        "url": "https://api.xero.com/api.xro/2.0/Reports/ProfitAndLoss?fromDate=2025-11-01&toDate=2025-11-30",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.accessToken }}"
+            },
+            {
+              "name": "xero-tenant-id",
+              "value": "03d1cbbb-0674-4de3-b489-55d8dfeea5c6"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Get TNER P&L",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        64
+      ],
+      "id": "get-pl"
+    },
+    {
+      "parameters": {
+        "jsCode": "const report = $input.item.json;\nconst reports = report.Reports || [];\nif (reports.length === 0) {\n  return [{json: {message: '📊 TNER P&L - November 2025\\n\\n❌ No data', chatId: $('Prepare Data').item.json.chatId}}];\n}\n\nconst reportData = reports[0];\nconst rows = reportData.Rows || [];\n\nlet message = `📊 TNER (ALWC PTE LTD)\\nProfit & Loss - Nov 2025\\n\\n`;\n\nlet totalRevenue = 0;\nlet totalExpenses = 0;\n\nconst income = rows.find(r => r.RowType === 'Section' && (r.Title?.includes('Income') || r.Title?.includes('Revenue')));\nif (income && income.Rows) {\n  message += `💰 REVENUE\\n━━━━━━━━━━━━━━━━━━━━━\\n`;\n  income.Rows.forEach(row => {\n    if (row.Cells && row.Cells.length >= 2 && row.RowType === 'Row') {\n      const account = row.Cells[0]?.Value || '';\n      const amount = parseFloat(row.Cells[1]?.Value || '0');\n      if (account && amount !== 0) {\n        totalRevenue += amount;\n        message += `${account}: $${amount.toFixed(2)}\\n`;\n      }\n    }\n  });\n  message += `Total: $${totalRevenue.toFixed(2)}\\n\\n`;\n}\n\nconst expenses = rows.find(r => r.RowType === 'Section' && r.Title?.includes('Expense'));\nif (expenses && expenses.Rows) {\n  message += `💸 EXPENSES\\n━━━━━━━━━━━━━━━━━━━━━\\n`;\n  expenses.Rows.forEach(row => {\n    if (row.Cells && row.Cells.length >= 2 && row.RowType === 'Row') {\n      const account = row.Cells[0]?.Value || '';\n      const amount = parseFloat(row.Cells[1]?.Value || '0');\n      if (account && amount !== 0) {\n        totalExpenses += Math.abs(amount);\n        message += `${account}: $${Math.abs(amount).toFixed(2)}\\n`;\n      }\n    }\n  });\n  message += `Total: $${totalExpenses.toFixed(2)}\\n\\n`;\n}\n\nconst netProfit = totalRevenue - totalExpenses;\nconst emoji = netProfit >= 0 ? '📈' : '📉';\nmessage += `━━━━━━━━━━━━━━━━━━━━━\\n${emoji} NET PROFIT: $${netProfit.toFixed(2)}`;\n\nreturn [{json: {message, chatId: $('Prepare Data').item.json.chatId}}];"
+      },
+      "name": "Format P&L",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        64
+      ],
+      "id": "fmt-pl"
+    },
+    {
+      "parameters": {
+        "url": "https://api.xero.com/api.xro/2.0/Invoices?where=Type%3D%3D%22ACCREC%22%20AND%20Status%3D%3D%22AUTHORISED%22",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.accessToken }}"
+            },
+            {
+              "name": "xero-tenant-id",
+              "value": "03d1cbbb-0674-4de3-b489-55d8dfeea5c6"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Get TNER AR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        256
+      ],
+      "id": "get-ar"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.item.json;\nconst allInvoices = data.Invoices || [];\nconst unpaidInvoices = allInvoices.filter(inv => parseFloat(inv.AmountDue || '0') > 0);\n\nif (unpaidInvoices.length === 0) {\n  return [{json: {message: '📊 TNER AR\\n\\n✅ No outstanding invoices!', chatId: $('Prepare Data').item.json.chatId}}];\n}\n\nlet message = `📊 TNER AR Report\\n\\n`;\nlet totalAR = 0;\nlet current = 0;\nlet overdue = 0;\nconst today = new Date();\n\nunpaidInvoices.slice(0, 10).forEach(inv => {\n  const invNumber = inv.InvoiceNumber || 'N/A';\n  const customer = inv.Contact?.Name || 'Unknown';\n  const amountDue = parseFloat(inv.AmountDue || '0');\n  const dueDate = new Date(inv.DueDate);\n  const daysDue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));\n  \n  totalAR += amountDue;\n  if (daysDue <= 0) current += amountDue;\n  else overdue += amountDue;\n  \n  const daysStr = daysDue > 0 ? `+${daysDue}d` : 'due';\n  message += `${invNumber}: $${amountDue.toFixed(2)} (${daysStr})\\n`;\n});\n\nif (unpaidInvoices.length > 10) {\n  message += `\\n...and ${unpaidInvoices.length - 10} more\\n`;\n}\n\nmessage += `\\n━━━━━━━━━━━━━━━━━━━━━\\n`;\nmessage += `Total: ${unpaidInvoices.length} invoices\\n`;\nmessage += `AR: $${totalAR.toFixed(2)}\\n`;\nmessage += `Overdue: $${overdue.toFixed(2)}`;\n\nreturn [{json: {message, chatId: $('Prepare Data').item.json.chatId}}];"
+      },
+      "name": "Format AR",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        256
+      ],
+      "id": "fmt-ar"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1728,
+        160
+      ],
+      "id": "send",
+      "webhookId": "5703ae42-3cc9-49de-9623-55f3a8f10253",
+      "credentials": {
+        "telegramApi": {
+          "id": "REDACTED",
+          "name": "Hawdybot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Security Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Security Check": {
+      "main": [
+        [
+          {
+            "node": "Route Command",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Command": {
+      "main": [
+        [
+          {
+            "node": "Refresh Xero Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Refresh Xero Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Help Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Xero Token": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Get TNER P&L",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get TNER AR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get TNER P&L": {
+      "main": [
+        [
+          {
+            "node": "Format P&L",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get TNER AR": {
+      "main": [
+        [
+          {
+            "node": "Format AR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format P&L": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format AR": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 3600,
+    "timezone": "UTC"
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T05:32:08.853Z",
+    "n8nId": "wknU2j31OezyjY3c",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}

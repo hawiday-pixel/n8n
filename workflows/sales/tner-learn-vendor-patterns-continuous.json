@@ -1,0 +1,253 @@
+{
+  "name": "TNER - Learn Vendor Patterns (Continuous)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.xero.com/connections",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "get-connections",
+      "name": "Get Xero Organizations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const connections = $input.all();\nconst alwcConnection = connections.find(conn => conn.json.tenantName && conn.json.tenantName.toUpperCase().includes('ALWC'));\nif (!alwcConnection) { throw new Error('ALWC not found'); }\nreturn [{ json: { tenantId: alwcConnection.json.tenantId } }];"
+      },
+      "id": "find-alwc",
+      "name": "Find ALWC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/BankTransactions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xero-tenant-id",
+              "value": "={{ $json.tenantId }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "get-recent",
+      "name": "Get Recent Transactions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "REDACTED",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const transactions = $json.BankTransactions || [];\n\n// Filter to last 10 minutes AND has LineItems (manually created/categorized)\nconst tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);\nconst learnableTxns = transactions.filter(txn => {\n  const updated = new Date(txn.UpdatedDateUTC);\n  return updated >= tenMinsAgo && \n         txn.LineItems && \n         txn.LineItems.length > 0 &&\n         txn.LineItems[0].AccountCode; // Must have account code\n});\n\nif (learnableTxns.length === 0) {\n  console.log('No new transactions to learn from');\n  return [];\n}\n\nconsole.log(`Found ${learnableTxns.length} transactions to learn from`);\n\n// Extract patterns\nconst patterns = [];\n\nfor (const txn of learnableTxns) {\n  const contact = txn.Contact?.Name || '';\n  const reference = txn.Reference || '';\n  const lineItem = txn.LineItems[0];\n  const accountCode = lineItem.AccountCode;\n  const taxType = lineItem.TaxType || 'NONE';\n  const description = lineItem.Description || '';\n  const amount = Math.abs(txn.Total || 0);\n  \n  // Extract vendor name (prioritize contact, fallback to first word of reference)\n  let vendorName = contact || reference.split(' ')[0] || 'Unknown';\n  \n  if (vendorName === 'Unknown' || !accountCode) continue;\n  \n  patterns.push({\n    json: {\n      company: 'TNER',\n      vendor_name: vendorName,\n      vendor_name_normalized: vendorName.toLowerCase().trim(),\n      account_code: accountCode,\n      account_name: null, // Will be enriched from COA later\n      tax_type: taxType,\n      amount: amount,\n      description: description,\n      reference: reference,\n      transaction_date: txn.Date,\n      transaction_id: txn.BankTransactionID\n    }\n  });\n}\n\nif (patterns.length > 0) {\n  console.log(`Extracted ${patterns.length} learnable patterns`);\n  return patterns;\n} else {\n  return [];\n}"
+      },
+      "id": "extract-patterns",
+      "name": "Extract Vendor Patterns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Find ALWC').item.json.supabaseUrl || 'https://mgldctmrbajwqcwqywjj.supabase.co' }}/rest/v1/rpc/upsert_vendor_pattern",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"p_company\": $json.company,\n  \"p_vendor_name\": $json.vendor_name,\n  \"p_vendor_name_normalized\": $json.vendor_name_normalized,\n  \"p_account_code\": $json.account_code,\n  \"p_tax_type\": $json.tax_type,\n  \"p_amount\": $json.amount,\n  \"p_description\": $json.description,\n  \"p_reference\": $json.reference\n} }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 500
+            }
+          }
+        }
+      },
+      "id": "save-to-supabase",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $input.all();\n\nif (results.length === 0) {\n  return [{ json: { message: 'No new patterns learned', learnedCount: 0 } }];\n}\n\nconst summary = `🧠 *TNER AI CFO Learning*\\n${new Date().toLocaleString()}\\n\\n📚 Learned from ${results.length} transaction(s):\\n\\n${results.map((r, i) => {\n  const p = r.json;\n  return `${i+1}. ${p.vendor_name} → ${p.account_code}\\n   Amount: $${p.amount} | Tax: ${p.tax_type}`;\n}).join('\\n')}`;\n\nconsole.log(summary);\n\nreturn [{ json: { summary, learnedCount: results.length, patterns: results.map(r => r.json) } }];"
+      },
+      "id": "summary",
+      "name": "Learning Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Xero Organizations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Xero Organizations": {
+      "main": [
+        [
+          {
+            "node": "Find ALWC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find ALWC": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Transactions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Transactions": {
+      "main": [
+        [
+          {
+            "node": "Extract Vendor Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Vendor Patterns": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Learning Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 3600,
+    "timezone": "UTC"
+  },
+  "staticData": null,
+  "meta": {
+    "exportedAt": "2025-12-06T05:32:08.846Z",
+    "n8nId": "8y2tKsCHLL2LqikK",
+    "active": false,
+    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
+  }
+}
