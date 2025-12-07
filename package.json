@@ -1,7 +1,21 @@
 {
   "name": "n8n",
   "version": "1.0.0",
-  "description": "n8n workflow repository for HOZ, TNER, and WRAP automation",
+  "description": "--- created: 2024-12-06 updated: 2024-12-06 ---",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "export": "node scripts/export-all.js",
+    "import": "node scripts/import-all.js",
+    "backup": "node scripts/backup-to-github.js",
+    "deploy": "node scripts/deploy.js",
+    "lint": "eslint scripts/**/*.js",
+    "lint:fix": "eslint scripts/**/*.js --fix",
+    "format": "prettier --write \"scripts/**/*.js\"",
+    "prepare": "husky"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hawiday-pixel/n8n.git"
@@ -12,5 +26,23 @@
   "bugs": {
     "url": "https://github.com/hawiday-pixel/n8n/issues"
   },
-  "homepage": "https://github.com/hawiday-pixel/n8n#readme"
+  "homepage": "https://github.com/hawiday-pixel/n8n#readme",
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.7.4"
+  },
+  "lint-staged": {
+    "scripts/**/*.js": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  }
 }

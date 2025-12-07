@@ -1,0 +1,6 @@
+node_modules
+workflows/**/*.json
+credentials/**/*.json
+ai-core/**/*.json
+package-lock.json
+
