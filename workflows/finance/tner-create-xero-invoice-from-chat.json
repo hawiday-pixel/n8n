@@ -1,5 +1,9 @@
 {
   "name": "TNER | Finance | create-xero-invoice-from-chat",
+  "id": "02gL9fJXVD41ePud",
+  "versionCounter": 3,
+  "updatedAt": "2025-12-06T06:43:21.369Z",
+  "active": false,
   "nodes": [
     {
       "parameters": {
@@ -12,10 +16,7 @@
       "name": "Invoice Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [
-        200,
-        300
-      ]
+      "position": [200, 300]
     },
     {
       "parameters": {
@@ -25,10 +26,7 @@
       "name": "Validate Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        400,
-        300
-      ]
+      "position": [400, 300]
     },
     {
       "parameters": {
@@ -39,13 +37,10 @@
       "name": "Fetch Customer Cache",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [
-        600,
-        260
-      ],
+      "position": [600, 260],
       "credentials": {
         "supabaseApi": {
-          "id": "REDACTED",
+          "id": "supabase-tner",
           "name": "Supabase TNER"
         }
       }
@@ -58,10 +53,7 @@
       "name": "Compose Invoice Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        800,
-        260
-      ]
+      "position": [800, 260]
     },
     {
       "parameters": {
@@ -84,13 +76,10 @@
       "name": "Create Xero Invoice",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [
-        1000,
-        260
-      ],
+      "position": [1000, 260],
       "credentials": {
         "oauth2Api": {
-          "id": "REDACTED",
+          "id": "xero-oauth",
           "name": "Xero OAuth"
         }
       }
@@ -104,13 +93,10 @@
       "name": "Store Order History",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [
-        1200,
-        260
-      ],
+      "position": [1200, 260],
       "credentials": {
         "supabaseApi": {
-          "id": "REDACTED",
+          "id": "supabase-tner",
           "name": "Supabase TNER"
         }
       }
@@ -124,88 +110,35 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [
-        1400,
-        260
-      ]
+      "position": [1400, 260]
     }
   ],
   "connections": {
     "Invoice Webhook": {
-      "main": [
-        [
-          {
-            "node": "Validate Payload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{"node": "Validate Payload", "type": "main", "index": 0}]]
     },
     "Validate Payload": {
-      "main": [
-        [
-          {
-            "node": "Fetch Customer Cache",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{"node": "Fetch Customer Cache", "type": "main", "index": 0}]]
     },
     "Fetch Customer Cache": {
-      "main": [
-        [
-          {
-            "node": "Compose Invoice Payload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{"node": "Compose Invoice Payload", "type": "main", "index": 0}]]
     },
     "Compose Invoice Payload": {
-      "main": [
-        [
-          {
-            "node": "Create Xero Invoice",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{"node": "Create Xero Invoice", "type": "main", "index": 0}]]
     },
     "Create Xero Invoice": {
-      "main": [
-        [
-          {
-            "node": "Store Order History",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{"node": "Store Order History", "type": "main", "index": 0}]]
     },
     "Store Order History": {
-      "main": [
-        [
-          {
-            "node": "Respond",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+      "main": [[{"node": "Respond", "type": "main", "index": 0}]]
     }
   },
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "staticData": null,
-  "meta": {
-    "exportedAt": "2025-12-06T05:32:08.841Z",
-    "n8nId": "02gL9fJXVD41ePud",
-    "active": false,
-    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
-  }
+  "meta": null,
+  "pinData": null
 }

@@ -1,8 +1,8 @@
 ---
-created: 2025-12-06
-updated: 2025-12-06
+alwaysApply: true
+created: 2025-12-07
+updated: 2025-12-07
 ---
-
 # n8n-MCP Workflow Expert
 
 You are an expert in n8n automation software using n8n-MCP tools. Your role is to design, build, and validate n8n workflows with maximum accuracy and efficiency.
@@ -376,3 +376,70 @@ n8n_update_partial_workflow({
 20. **n8n-nodes-base.executeWorkflowTrigger** - Sub-workflow calls
 
 **Note:** LangChain nodes use the `@n8n/n8n-nodes-langchain.` prefix, core nodes use `n8n-nodes-base.`
+
+## Version Control & Sync
+
+This section defines how to manage local workflow files and keep them synchronized with n8n.
+
+### Local File Structure (REQUIRED)
+
+All local workflow JSON files MUST follow this structure. The first 5 fields are **required metadata** for sync tracking:
+
+```json
+{
+  "name": "HOZ | Admin | email-classifier",
+  "id": "b1glt2ypMuMgkmhN",
+  "versionCounter": 10,
+  "updatedAt": "2025-12-07T13:15:50.000Z",
+  "active": true,
+  "nodes": [...],
+  "connections": {...}
+}
+```
+
+**Field Order**: Always place `name`, `id`, `versionCounter`, `updatedAt`, `active` at the top of the JSON file for easy inspection.
+
+### Key Fields (Required for Sync)
+
+| Field | Source | Purpose | Rule |
+|-------|--------|---------|------|
+| `name` | Both | Workflow identifier in n8n | ⚠️ NEVER change locally |
+| `id` | n8n | Unique workflow ID | Copy from n8n after first deploy |
+| `versionCounter` | n8n | Version number (increments on each n8n save) | Update after every sync/deploy |
+| `updatedAt` | n8n | Last modification timestamp | Update after every sync/deploy |
+| `active` | Both | Workflow activation status | Sync with n8n state |
+
+### Sync Check Process
+
+1. **List local files**: Glob `workflows/**/*.json`
+2. **Fetch n8n workflows**: `n8n_list_workflows()` or `n8n_get_workflow({id, mode: 'minimal'})`
+3. **Compare**:
+   - Match by `id` field
+   - Compare `versionCounter` values
+   - If n8n > local → n8n has newer changes
+   - If local > n8n → Should not happen (deploy needed or stale local)
+
+### After Syncing from n8n
+
+When exporting/syncing a workflow from n8n to local:
+
+1. Use `n8n_get_workflow({id, mode: 'full'})` to fetch complete workflow
+2. Update local file with full content
+3. **Always update** `versionCounter` and `updatedAt` in local file
+4. Remove n8n-only metadata: `shared`, `triggerCount`, `versionId`, `activeVersionId`
+
+### After Deploying to n8n
+
+When deploying local changes to n8n:
+
+1. Use `n8n_update_full_workflow()` to push changes
+2. Fetch updated workflow with `n8n_get_workflow({id, mode: 'minimal'})`
+3. Update local `versionCounter` and `updatedAt` with new values
+
+### ⚠️ Version Control Rules (CRITICAL)
+
+1. **NEVER change `name` field locally** - Changing the name creates a DUPLICATE workflow in n8n instead of updating
+2. **ALWAYS update `versionCounter` and `updatedAt`** - After every sync from n8n or deploy to n8n
+3. **Local edits don't increment version** - Only saves in n8n UI increment `versionCounter`
+4. **n8n is the source of truth** - Local files are backups; always fetch latest from n8n before editing
+5. **Check sync before editing** - Compare local `versionCounter` with n8n to detect drift

@@ -1,0 +1,55 @@
+---
+alwaysApply: true
+---
+# Documentation Consolidation
+
+## Where to Place Documentation
+
+All project documentation files (`.md`) should be stored under:
+
+```
+.cursor/docs/
+```
+
+NOT in a root-level `docs/` folder.
+
+## Rationale
+
+- Keeps all Cursor-related context (rules + docs) in one place
+- Avoids cluttering the repo root
+- Documentation stays with the AI configuration
+
+## Folder Structure
+
+```
+.cursor/
+├── rules/              # Cursor rules (.mdc files)
+│   ├── documentation.mdc
+│   ├── n8n-api.mdc
+│   ├── n8n-mcp.mdc
+│   ├── n8n-structure.mdc
+│   └── workflow-naming.mdc
+└── docs/               # Documentation (.md files)
+    └── how-to-deploy.md
+```
+
+## When Creating New Documentation
+
+1. Place file in `.cursor/docs/`
+2. Use lowercase kebab-case: `how-to-xyz.md`
+3. Include YAML frontmatter with dates:
+
+```yaml
+---
+created: YYYY-MM-DD
+updated: YYYY-MM-DD
+---
+```
+
+## File Naming Convention
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| How-to guides | `how-to-{topic}.md` | `how-to-deploy.md` |
+| Reference docs | `{topic}-reference.md` | `mcp-reference.md` |
+| Troubleshooting | `troubleshooting-{topic}.md` | `troubleshooting-api.md` |

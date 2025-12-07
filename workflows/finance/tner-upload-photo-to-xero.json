@@ -1,5 +1,9 @@
 {
   "name": "TNER | Finance | upload-photo-to-xero",
+  "id": "4Jp9MIWK1QSRYf8f",
+  "versionCounter": 7,
+  "updatedAt": "2025-12-06T06:43:32.846Z",
+  "active": true,
   "nodes": [
     {
       "parameters": {
@@ -11,10 +15,7 @@
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
-      "position": [
-        250,
-        300
-      ],
+      "position": [250, 300],
       "webhookId": "upload-photo-xero",
       "id": "webhook"
     },
@@ -25,10 +26,7 @@
       "name": "Prepare Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        450,
-        300
-      ],
+      "position": [450, 300],
       "id": "prepare"
     },
     {
@@ -42,13 +40,10 @@
       "name": "Get Tenant",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        650,
-        300
-      ],
+      "position": [650, 300],
       "credentials": {
         "xeroOAuth2Api": {
-          "id": "REDACTED",
+          "id": "acPNCKWEdEc0gA8V",
           "name": "Xero account"
         }
       },
@@ -61,10 +56,7 @@
       "name": "Prepare Upload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [
-        850,
-        300
-      ],
+      "position": [850, 300],
       "id": "prepare-upload"
     },
     {
@@ -76,33 +68,22 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "xero-tenant-id",
-              "value": "={{ $json.tenantId }}"
-            },
-            {
-              "name": "Content-Type",
-              "value": "={{ $json.contentType }}"
-            }
+            {"name": "xero-tenant-id", "value": "={{ $json.tenantId }}"},
+            {"name": "Content-Type", "value": "={{ $json.contentType }}"}
           ]
         },
         "sendBody": true,
         "specifyBody": "string",
         "body": "={{ Buffer.from($json.rawBody, 'base64') }}",
-        "options": {
-          "bodyContentType": "raw"
-        }
+        "options": {"bodyContentType": "raw"}
       },
       "name": "Upload to Xero",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        1050,
-        300
-      ],
+      "position": [1050, 300],
       "credentials": {
         "xeroOAuth2Api": {
-          "id": "REDACTED",
+          "id": "acPNCKWEdEc0gA8V",
           "name": "Xero account"
         }
       },
@@ -116,69 +97,16 @@
       "name": "Success Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [
-        1250,
-        300
-      ],
+      "position": [1250, 300],
       "id": "success"
     }
   ],
   "connections": {
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Prepare Data",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Data": {
-      "main": [
-        [
-          {
-            "node": "Get Tenant",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get Tenant": {
-      "main": [
-        [
-          {
-            "node": "Prepare Upload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Upload": {
-      "main": [
-        [
-          {
-            "node": "Upload to Xero",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Upload to Xero": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+    "Webhook": {"main": [[{"node": "Prepare Data", "type": "main", "index": 0}]]},
+    "Prepare Data": {"main": [[{"node": "Get Tenant", "type": "main", "index": 0}]]},
+    "Get Tenant": {"main": [[{"node": "Prepare Upload", "type": "main", "index": 0}]]},
+    "Prepare Upload": {"main": [[{"node": "Upload to Xero", "type": "main", "index": 0}]]},
+    "Upload to Xero": {"main": [[{"node": "Success Response", "type": "main", "index": 0}]]}
   },
   "settings": {
     "saveExecutionProgress": true,
@@ -186,13 +114,11 @@
     "saveDataErrorExecution": "all",
     "saveDataSuccessExecution": "all",
     "executionTimeout": 3600,
-    "timezone": "UTC"
+    "timezone": "UTC",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
   },
   "staticData": null,
-  "meta": {
-    "exportedAt": "2025-12-06T05:32:08.845Z",
-    "n8nId": "4Jp9MIWK1QSRYf8f",
-    "active": true,
-    "note": "Credentials and secrets have been redacted. Re-configure in n8n after import."
-  }
+  "meta": null,
+  "pinData": null
 }
