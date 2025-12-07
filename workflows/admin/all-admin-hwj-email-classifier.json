@@ -1,0 +1,345 @@
+{
+  "name": "ALL | Admin | HWJ email-classifier",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 304]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "filters": {
+          "q": "-label:Processed in:anywhere"
+        }
+      },
+      "id": "gmail-get-emails",
+      "name": "Get Unprocessed Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [464, 208],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Ua2vTsXX5iWeJF78",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "label"
+      },
+      "id": "gmail-get-labels",
+      "name": "Get All Labels",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [464, 400],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Ua2vTsXX5iWeJF78",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "merge-wait",
+      "name": "Wait for Both",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [688, 304]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allInputs = $input.all();\n\n// Separate labels and emails\nconst labelItems = allInputs.filter(item => item.json.type === 'user' || item.json.type === 'system' || item.json.labelListVisibility);\nconst emailItems = allInputs.filter(item => item.json.id && item.json.threadId && !item.json.labelListVisibility);\n\n// Build label map\nconst labelMap = {};\nfor (const item of labelItems) {\n  const label = item.json;\n  if (label.name && label.id) {\n    labelMap[label.name] = label.id;\n    labelMap[label.name.toLowerCase()] = label.id;\n  }\n}\n\n// Rule-based classification\nconst RULES = {\n  'hoz': { senders: ['@hoz.sg', 'HOZ PTE'], subjects: ['HOZ', '201907826W'], company: 'HOZ' },\n  'tner': { senders: ['@tner.sg', 'tner.sg'], subjects: ['TNER', 'tner.sg'], company: 'TNER' },\n  'wrap': { senders: ['@wrap.sg', 'wrap.sg'], subjects: ['WRAP', 'wrap.sg'], company: 'WRAP' },\n  'banking': { senders: ['@citibank.com', '@dbs.com', '@ocbc.com', '@uob.com', 'ibanking'], category: 'Finance/Banking', urgency: 'medium' },\n  'crypto': { senders: ['@gemini.com', '@kraken.com', '@binance', '@coinhako'], category: 'Finance/Crypto', urgency: 'medium' },\n  'government': { senders: ['@iras.gov.sg', '@cpf.gov.sg', '@mom.gov.sg', '@ns.gov.sg', '@singpass'], category: 'Government', urgency: 'high' },\n  'legal': { senders: ['@shooklin.com', '@rajahtan.com', '@wongpartnership'], category: 'Legal', urgency: 'high' },\n  'tech': { senders: ['@vercel.com', '@supabase.com', '@cloudflare.com', '@linear.app', '@figma.com', '@hostinger.com', '@github.com', '@notion.so', '@slack.com'], category: 'Tech', urgency: 'low' },\n  'security': { senders: ['security@', 'noreply@'], subjects: ['security', 'password reset', 'verification code', '2fa', 'login'], category: 'Security', urgency: 'high' },\n  'food': { senders: ['@grab.com', '@foodpanda', '@dominos', '@mcdonalds', '@fairprice', '@deliveroo'], category: 'Food', urgency: 'low' },\n  'travel': { senders: ['@airasia', '@flyscoot', '@singaporeair', '@trip.com', '@changiairport', '@klook', '@booking.com', '@agoda'], category: 'Travel', urgency: 'low' },\n  'shopping': { senders: ['@carousell', '@lazada', '@shopee', '@amazon', '@apple.com', '@atome', '@zalora'], category: 'Shopping', urgency: 'low' },\n  'receipts': { subjects: ['receipt', 'payment is complete', 'order confirmation', 'invoice', 'payment received'], category: 'Finance/Receipts', urgency: 'low' },\n  'learning': { senders: ['@skool.com', '@emeritus', '@coursera', '@udemy', '@nlb.gov.sg', '@skillsfuture'], category: 'Learning', urgency: 'low' },\n  'social': { senders: ['@linkedin.com', '@quora.com', '@reddit.com', '@twitter.com', '@facebook.com', '@instagram'], category: 'Social', urgency: 'low' },\n  'newsletters': { senders: ['@substack.com', 'newsletter@', 'digest@', 'weekly@', 'updates@'], category: 'Newsletters', urgency: 'low' }\n};\n\nconst results = [];\nfor (const item of emailItems) {\n  const email = item.json;\n  const from = (email.From || '').toLowerCase();\n  const subject = (email.Subject || '').toLowerCase();\n  const snippet = (email.snippet || '').toLowerCase();\n  const labels = email.labels || [];\n  \n  let c = { id: email.id, threadId: email.threadId, from: email.From, subject: email.Subject,\n    snippet: email.snippet, company: 'Personal', category: null, urgency: 'low', needsAI: false,\n    _labelMap: labelMap };\n  \n  // Gmail's built-in categories\n  if (labels.some(l => l.name === 'CATEGORY_PROMOTIONS')) c.category = 'Promotions';\n  if (labels.some(l => l.name === 'CATEGORY_SOCIAL')) c.category = 'Social';\n  \n  // Apply rules\n  for (const [ruleName, rule] of Object.entries(RULES)) {\n    let matched = false;\n    if (rule.senders) matched = rule.senders.some(s => from.includes(s.toLowerCase()));\n    if (!matched && rule.subjects) matched = rule.subjects.some(s => subject.includes(s.toLowerCase()) || snippet.includes(s.toLowerCase()));\n    if (matched) {\n      if (rule.company) c.company = rule.company;\n      if (rule.category) c.category = rule.category;\n      if (rule.urgency) c.urgency = rule.urgency;\n      break;\n    }\n  }\n  \n  if (!c.category) c.needsAI = true;\n  \n  results.push({ json: c });\n}\n\nreturn results;"
+      },
+      "id": "code-rules",
+      "name": "Apply Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [912, 304]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-ai",
+              "leftValue": "={{ $json.needsAI }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-needs-ai",
+      "name": "Needs AI?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 304]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You classify emails. Respond with ONLY valid JSON, no markdown:\n{\"category\":\"Finance/Banking\"|\"Finance/Receipts\"|\"Finance/Crypto\"|\"Government\"|\"Legal\"|\"Tech\"|\"Security\"|\"Food\"|\"Travel\"|\"Shopping\"|\"Learning\"|\"Social\"|\"Newsletters\"|\"Promotions\"|\"Other\",\"urgency\":\"high\"|\"medium\"|\"low\"}\n\nHigh urgency: legal, government, security alerts, payments due\nMedium urgency: banking, appointments, deadlines\nLow urgency: newsletters, promotions, social, receipts",
+              "role": "system"
+            },
+            {
+              "content": "From: {{ $json.from }}\nSubject: {{ $json.subject }}\nSnippet: {{ $json.snippet }}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 150,
+          "temperature": 0.1
+        }
+      },
+      "id": "openai-classify",
+      "name": "AI Classify",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [1344, 208],
+      "credentials": {
+        "openAiApi": {
+          "id": "fra71BbB2pdeQOhy",
+          "name": "HAW_AI_DESK_DEV"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\nconst originalEmails = $('Needs AI?').all();\n\nfor (let i = 0; i < items.length; i++) {\n  const aiResponse = items[i].json;\n  let aiResult = { category: 'Other', urgency: 'low' };\n  \n  try {\n    const content = aiResponse.message?.content || aiResponse.text || '{}';\n    const cleaned = content.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n    aiResult = JSON.parse(cleaned);\n  } catch (e) {\n    console.log('AI parse error:', e.message);\n  }\n  \n  const pairedIndex = items[i].pairedItem?.item ?? i;\n  const originalEmail = originalEmails[pairedIndex]?.json || {};\n  \n  results.push({\n    json: {\n      ...originalEmail,\n      category: aiResult.category || 'Other',\n      urgency: aiResult.urgency || 'low',\n      classifiedBy: 'AI'\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "code-parse-ai",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1568, 208]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map(item => ({ json: { ...item.json, classifiedBy: 'Rules' } }));"
+      },
+      "id": "code-mark-rules",
+      "name": "Mark Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1344, 400]
+    },
+    {
+      "parameters": {},
+      "id": "merge-results",
+      "name": "Merge All",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1792, 304]
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\nfor (const item of $input.all()) {\n  const c = item.json;\n  const labelMap = c._labelMap || {};\n  const labelIds = [];\n  const labelNames = [];\n  \n  const addLabel = (name) => {\n    const id = labelMap[name] || labelMap[name.toLowerCase()];\n    if (id) { labelIds.push(id); labelNames.push(name); }\n  };\n  \n  if (c.company && c.company !== 'Personal') addLabel(c.company);\n  if (c.category) addLabel(c.category);\n  if (c.urgency === 'high') addLabel('Action-Required');\n  addLabel('Processed');\n  \n  const { _labelMap, ...cleanData } = c;\n  results.push({ json: { ...cleanData, labelsToAdd: labelIds, labelNames: labelNames } });\n}\n\nreturn results;"
+      },
+      "id": "code-labels",
+      "name": "Prepare Labels",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 304]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-labels",
+              "leftValue": "={{ $json.labelsToAdd.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-labels",
+      "name": "Has Labels?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2224, 304]
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": "={{ $json.labelsToAdd }}"
+      },
+      "id": "gmail-add-labels",
+      "name": "Apply Labels",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2448, 208],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Ua2vTsXX5iWeJF78",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-low",
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": "low",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-low-urgency",
+      "name": "Low Urgency?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2672, 208]
+    },
+    {
+      "parameters": {
+        "operation": "removeLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": ["INBOX"]
+      },
+      "id": "gmail-archive",
+      "name": "Archive (Remove from Inbox)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2880, 112],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Ua2vTsXX5iWeJF78",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "noop",
+      "name": "Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [3104, 208]
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [[
+        {"node": "Get Unprocessed Emails", "type": "main", "index": 0},
+        {"node": "Get All Labels", "type": "main", "index": 0}
+      ]]
+    },
+    "Get Unprocessed Emails": {
+      "main": [[{"node": "Wait for Both", "type": "main", "index": 0}]]
+    },
+    "Get All Labels": {
+      "main": [[{"node": "Wait for Both", "type": "main", "index": 1}]]
+    },
+    "Wait for Both": {
+      "main": [[{"node": "Apply Rules", "type": "main", "index": 0}]]
+    },
+    "Apply Rules": {
+      "main": [[{"node": "Needs AI?", "type": "main", "index": 0}]]
+    },
+    "Needs AI?": {
+      "main": [
+        [{"node": "AI Classify", "type": "main", "index": 0}],
+        [{"node": "Mark Rules", "type": "main", "index": 0}]
+      ]
+    },
+    "AI Classify": {
+      "main": [[{"node": "Parse AI Response", "type": "main", "index": 0}]]
+    },
+    "Parse AI Response": {
+      "main": [[{"node": "Merge All", "type": "main", "index": 0}]]
+    },
+    "Mark Rules": {
+      "main": [[{"node": "Merge All", "type": "main", "index": 1}]]
+    },
+    "Merge All": {
+      "main": [[{"node": "Prepare Labels", "type": "main", "index": 0}]]
+    },
+    "Prepare Labels": {
+      "main": [[{"node": "Has Labels?", "type": "main", "index": 0}]]
+    },
+    "Has Labels?": {
+      "main": [
+        [{"node": "Apply Labels", "type": "main", "index": 0}],
+        [{"node": "Done", "type": "main", "index": 0}]
+      ]
+    },
+    "Apply Labels": {
+      "main": [[{"node": "Low Urgency?", "type": "main", "index": 0}]]
+    },
+    "Low Urgency?": {
+      "main": [
+        [{"node": "Archive (Remove from Inbox)", "type": "main", "index": 0}],
+        [{"node": "Done", "type": "main", "index": 0}]
+      ]
+    },
+    "Archive (Remove from Inbox)": {
+      "main": [[{"node": "Done", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "nHUnxLKwhMqC5GT1",
+  "active": true
+}
+

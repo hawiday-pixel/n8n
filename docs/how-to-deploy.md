@@ -1,6 +1,6 @@
 ---
 created: 2024-12-06
-updated: 2024-12-06
+updated: 2025-12-07
 ---
 
 # How to Deploy
@@ -8,12 +8,25 @@ updated: 2024-12-06
 ## Prerequisites
 
 - Access to n8n instance on Hostinger
-- n8n API key configured
+- n8n MCP tools configured (API key in MCP server config)
 - Git repository cloned locally
 
 ## Deployment Methods
 
-### Method 1: Manual Import (Recommended for Single Workflows)
+### Method 1: Using Cursor + n8n MCP (Recommended)
+
+Simply ask Cursor to deploy your workflow:
+
+```
+"Deploy workflows/admin/tner-email-classifier.json to n8n"
+```
+
+Cursor will:
+1. Read the local JSON file
+2. Check if workflow exists (by name)
+3. Create new or update existing workflow via MCP
+
+### Method 2: Manual Import via n8n UI
 
 1. Open n8n UI
 2. Go to Workflows
@@ -21,27 +34,32 @@ updated: 2024-12-06
 4. Select the workflow JSON file
 5. Review and activate
 
-### Method 2: Using Deploy Script
+## Common MCP Commands
 
-```bash
-# Set environment variables
-export N8N_API_URL="https://your-n8n-instance.hostinger.com"
-export N8N_API_KEY="your-api-key"
+| Task | Ask Cursor |
+|------|------------|
+| Deploy workflow | "Deploy `workflows/admin/xyz.json` to n8n" |
+| Export workflow | "Export workflow ID `abc123` to `workflows/admin/`" |
+| List all workflows | "List all workflows in n8n" |
+| Rename workflow | "Rename workflow 'OLD' to 'NEW'" |
+| Activate workflow | "Activate workflow ID `abc123`" |
+| Validate workflow | "Validate workflow ID `abc123`" |
 
-# Deploy all workflows
-node scripts/deploy.js
+## MCP Tools Used
 
-# Deploy specific workflow
-node scripts/deploy.js sales/tner-sync-orders
-```
-
-## Environment Setup
-
-TODO: Document Hostinger-specific setup
+| Tool | Purpose |
+|------|---------|
+| `n8n_list_workflows` | List workflows (metadata) |
+| `n8n_get_workflow` | Get full workflow by ID |
+| `n8n_create_workflow` | Create new workflow |
+| `n8n_update_full_workflow` | Update existing workflow |
+| `n8n_update_partial_workflow` | Rename, activate, partial edits |
+| `n8n_validate_workflow` | Check for errors |
+| `n8n_health_check` | Verify API connectivity |
 
 ## Post-Deployment Checklist
 
-- [ ] Verify credentials are configured
+- [ ] Verify credentials are configured in n8n
 - [ ] Test workflow with sample data
 - [ ] Enable workflow activation
 - [ ] Set up error notifications
@@ -49,7 +67,14 @@ TODO: Document Hostinger-specific setup
 
 ## Rollback Procedure
 
-1. Export current workflow as backup
-2. Import previous version from git history
-3. Verify functionality
+1. Use `n8n_workflow_versions` to list version history
+2. Rollback to previous version if needed
+3. Or import previous version from git history
+
+## Troubleshooting
+
+If MCP tools aren't working:
+1. Ask Cursor to run `n8n_health_check` 
+2. Verify API connectivity and credentials
+3. Check MCP server configuration
 

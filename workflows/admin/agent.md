@@ -33,7 +33,7 @@ This guide helps AI agents understand:
 Every workflow is:
 - Built using **n8n nodes** (Webhook, Cron, Supabase, Code, HTTP Request, etc.)
 - Stored as **JSON files** in `workflows/admin/`
-- Deployed via `node scripts/deploy.js admin/{filename}`
+- Deployed via n8n MCP tools (`n8n_create_workflow` or `n8n_update_full_workflow`)
 
 Any JavaScript logic lives **inside n8n Code nodes**, not as external files.
 
@@ -49,7 +49,7 @@ Example:
 > → Flag: Customer messaging belongs in `customer-service/`, not `admin/`
 
 > **Naming conventions:** See `.cursor/rules/workflow-naming.mdc`
-> **n8n API & scripts:** See `.cursor/rules/n8n-api.mdc`
+> **n8n MCP tools:** See `.cursor/rules/n8n-structure.mdc`
 
 ---
 
@@ -512,16 +512,25 @@ Before deploying any admin workflow:
 
 ## 14. Quick Reference
 
-```bash
-# Deploy admin workflow
-node scripts/deploy.js admin/{company}-{function}.json
-
-# Deploy and activate
-node scripts/deploy.js admin/{company}-{function}.json --activate
-
-# Export latest from n8n
-node scripts/export-all.js
 ```
+# Deploy admin workflow (ask Cursor)
+"Deploy workflows/admin/{company}-{function}.json to n8n"
+
+# Deploy and activate (ask Cursor)
+"Deploy workflows/admin/{company}-{function}.json to n8n and activate it"
+
+# Export latest from n8n (ask Cursor)
+"Export workflow ID {id} to workflows/admin/"
+
+# List all workflows
+"List all workflows in n8n"
+```
+
+**MCP Tools Used:**
+- `n8n_create_workflow` — create new workflow
+- `n8n_update_full_workflow` — update existing workflow
+- `n8n_get_workflow` — export workflow by ID
+- `n8n_update_partial_workflow` — rename, activate, partial edits
 
 ---
 
