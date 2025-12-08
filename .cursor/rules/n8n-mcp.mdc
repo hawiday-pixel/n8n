@@ -1,7 +1,7 @@
 ---
 alwaysApply: true
 created: 2025-12-07
-updated: 2025-12-07
+updated: 2025-12-08
 ---
 # n8n-MCP Workflow Expert
 
@@ -31,11 +31,93 @@ Use validate_node(mode='minimal') → validate_node(mode='full') → validate_wo
 ⚠️ CRITICAL: Default parameter values are the #1 source of runtime failures.
 ALWAYS explicitly configure ALL parameters that control node behavior.
 
+### 6. External References First
+Before building or editing workflows, ALWAYS check external sources for:
+- **Latest API syntax** → Context7
+- **Working examples** → n8n-workflows Docs (4,343+ production workflows)
+
+## External Reference Sources
+
+### Three MCP Sources (Use in Order)
+
+| Source | Purpose | When to Use |
+|--------|---------|-------------|
+| **Context7** | Latest API docs & syntax | Before configuring ANY node |
+| **n8n-workflows Docs** | Real working examples | When building new workflows or editing complex nodes |
+| **n8n-MCP** | Build, validate, deploy | After gathering references |
+
+### Context7 - Latest API Documentation
+
+Use Context7 to get **current n8n documentation** before configuring nodes:
+
+```
+// Step 1: Get latest docs for a node type
+get-library-docs({
+  context7CompatibleLibraryID: "/n8n-io/n8n-docs",
+  topic: "gmail node",
+  mode: "code"
+})
+```
+
+**Recommended Library IDs:**
+| Library ID | Use Case | Snippets |
+|------------|----------|----------|
+| `/n8n-io/n8n-docs` | Official node documentation | 606 |
+| `/llmstxt/n8n_io_llms-full_txt` | Comprehensive reference | 25,877 |
+
+**When to use Context7:**
+- Configuring nodes you haven't used recently
+- When n8n-MCP validation fails with unclear errors
+- Checking if node API has changed
+- Learning new node parameters
+
+### n8n-workflows Docs - Production Examples
+
+Use n8n-workflows Docs to find **actual working workflows** from 4,343+ examples:
+
+```
+// Search for working examples
+search_n8n_workflows_code({query: "gmail slack notification"})
+search_n8n_workflows_docs({query: "email automation with attachments"})
+```
+
+**Available Tools:**
+| Tool | Purpose |
+|------|---------|
+| `search_n8n_workflows_code` | Search workflow JSON files (exact match) |
+| `search_n8n_workflows_docs` | Semantic search in documentation |
+| `fetch_n8n_workflows_documentation` | Get full repo overview |
+
+**When to use n8n-workflows Docs:**
+- Building workflows with multiple integrations
+- Looking for proven patterns (e.g., error handling, retries)
+- Finding real-world node configurations
+- Checking how others solved similar problems
+
+### Reference Workflow (MANDATORY)
+
+When creating or editing workflows:
+
+```
+// PARALLEL EXECUTION - Gather all references first
+[Silent execution]
+1. Context7: get-library-docs for relevant nodes
+2. n8n-workflows: search_n8n_workflows_code for similar workflows
+3. n8n-MCP: search_templates for official templates
+
+// Then proceed with building/editing
+```
+
 ## Workflow Process
 
 1. **Start**: Call `tools_documentation()` for best practices
 
-2. **Template Discovery Phase** (FIRST - parallel when searching multiple)
+2. **External Reference Phase** (MANDATORY - parallel execution)
+   - **Context7**: `get-library-docs({context7CompatibleLibraryID: "/n8n-io/n8n-docs", topic: "relevant-node"})` - Latest API docs
+   - **n8n-workflows**: `search_n8n_workflows_code({query: "relevant keywords"})` - Working examples
+   - Review patterns and configurations before proceeding
+
+3. **Template Discovery Phase** (parallel when searching multiple)
    - `search_templates({searchMode: 'by_metadata', complexity: 'simple'})` - Smart filtering
    - `search_templates({searchMode: 'by_task', task: 'webhook_processing'})` - Curated by task
    - `search_templates({query: 'slack notification'})` - Text search (default searchMode='keyword')
@@ -47,13 +129,13 @@ ALWAYS explicitly configure ALL parameters that control node behavior.
    - By time: `maxSetupMinutes: 15` for quick wins
    - By service: `requiredService: "openai"` for compatibility
 
-3. **Node Discovery** (if no suitable template - parallel execution)
+4. **Node Discovery** (if no suitable template - parallel execution)
    - Think deeply about requirements. Ask clarifying questions if unclear.
    - `search_nodes({query: 'keyword', includeExamples: true})` - Parallel for multiple nodes
    - `search_nodes({query: 'trigger'})` - Browse triggers
    - `search_nodes({query: 'AI agent langchain'})` - AI-capable nodes
 
-4. **Configuration Phase** (parallel for multiple nodes)
+5. **Configuration Phase** (parallel for multiple nodes)
    - `get_node({nodeType, detail: 'standard', includeExamples: true})` - Essential properties (default)
    - `get_node({nodeType, detail: 'minimal'})` - Basic metadata only (~200 tokens)
    - `get_node({nodeType, detail: 'full'})` - Complete information (~3000-8000 tokens)
@@ -61,12 +143,12 @@ ALWAYS explicitly configure ALL parameters that control node behavior.
    - `get_node({nodeType, mode: 'docs'})` - Human-readable markdown documentation
    - Show workflow architecture to user for approval before proceeding
 
-5. **Validation Phase** (parallel for multiple nodes)
+6. **Validation Phase** (parallel for multiple nodes)
    - `validate_node({nodeType, config, mode: 'minimal'})` - Quick required fields check
    - `validate_node({nodeType, config, mode: 'full', profile: 'runtime'})` - Full validation with fixes
    - Fix ALL errors before proceeding
 
-6. **Building Phase**
+7. **Building Phase**
    - If using template: `get_template(templateId, {mode: "full"})`
    - **MANDATORY ATTRIBUTION**: "Based on template by **[author.name]** (@[username]). View at: [url]"
    - Build from validated configurations
@@ -76,13 +158,13 @@ ALWAYS explicitly configure ALL parameters that control node behavior.
    - Use n8n expressions: $json, $node["NodeName"].json
    - Build in artifact (unless deploying to n8n instance)
 
-7. **Workflow Validation** (before deployment)
+8. **Workflow Validation** (before deployment)
    - `validate_workflow(workflow)` - Complete validation
    - `validate_workflow_connections(workflow)` - Structure check
    - `validate_workflow_expressions(workflow)` - Expression validation
    - Fix ALL issues before deployment
 
-8. **Deployment** (if n8n API configured)
+9. **Deployment** (if n8n API configured)
    - `n8n_create_workflow(workflow)` - Deploy
    - `n8n_validate_workflow({id})` - Post-deployment check
    - `n8n_update_partial_workflow({id, operations: [...]})` - Batch updates
@@ -334,9 +416,10 @@ n8n_update_partial_workflow({
 ### Core Behavior
 1. **Silent execution** - No commentary between tools
 2. **Parallel by default** - Execute independent operations simultaneously
-3. **Templates first** - Always check before building (2,709 available)
-4. **Multi-level validation** - Quick check → Full validation → Workflow validation
-5. **Never trust defaults** - Explicitly configure ALL parameters
+3. **External references first** - Check Context7 + n8n-workflows before building
+4. **Templates first** - Always check before building (2,709 available)
+5. **Multi-level validation** - Quick check → Full validation → Workflow validation
+6. **Never trust defaults** - Explicitly configure ALL parameters
 
 ### Attribution & Credits
 - **MANDATORY TEMPLATE ATTRIBUTION**: Share author name, username, and n8n.io link

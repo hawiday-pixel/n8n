@@ -1,0 +1,151 @@
+{
+  "name": "ALL | Admin | email-forward-reply-manager",
+  "id": "G2Gj35KOETQJVlrA",
+  "versionCounter": 8,
+  "updatedAt": "2025-12-08T02:10:03.507Z",
+  "active": false,
+  "nodes": [
+    {
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "parameters": {
+        "pollTimes": {
+          "item": [{ "mode": "everyMinute", "minuteInterval": 5 }]
+        },
+        "filters": {
+          "q": "is:unread -label:Draft-Created"
+        }
+      }
+    },
+    {
+      "id": "extract-headers",
+      "name": "Extract Original Recipient",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "parameters": {
+        "jsCode": "// Configuration: Your 3 source email addresses\nconst SOURCE_EMAILS = [\n  'finance@hoz.sg',\n  'home@hoz.sg', \n  'how.weijie@hoz.sg'\n];\n\nconst CENTRAL_EMAIL = 'howweijie@gmail.com';\n\nconst results = [];\n\nfor (const item of $input.all()) {\n  const email = item.json;\n  \n  // Extract headers\n  const headers = email.payload?.headers || [];\n  const getHeader = (name) => {\n    const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());\n    return header?.value || '';\n  };\n  \n  const from = getHeader('From');\n  const to = getHeader('To');\n  const subject = getHeader('Subject');\n  const deliveredTo = getHeader('Delivered-To');\n  const xForwardedTo = getHeader('X-Forwarded-To');\n  const xOriginalTo = getHeader('X-Original-To');\n  \n  // Get email body for AI context\n  let bodyText = '';\n  if (email.payload?.body?.data) {\n    bodyText = Buffer.from(email.payload.body.data, 'base64').toString('utf8');\n  } else if (email.payload?.parts) {\n    const textPart = email.payload.parts.find(p => p.mimeType === 'text/plain');\n    if (textPart?.body?.data) {\n      bodyText = Buffer.from(textPart.body.data, 'base64').toString('utf8');\n    }\n  }\n  \n  // Determine which source email this was originally sent to\n  let originalRecipient = null;\n  \n  // Method 1: Check X-Original-To header\n  if (xOriginalTo) {\n    originalRecipient = SOURCE_EMAILS.find(email => \n      xOriginalTo.toLowerCase().includes(email.toLowerCase())\n    );\n  }\n  \n  // Method 2: Check Delivered-To header\n  if (!originalRecipient && deliveredTo) {\n    originalRecipient = SOURCE_EMAILS.find(email => \n      deliveredTo.toLowerCase().includes(email.toLowerCase())\n    );\n  }\n  \n  // Method 3: Check X-Forwarded-To header\n  if (!originalRecipient && xForwardedTo) {\n    originalRecipient = SOURCE_EMAILS.find(email => \n      xForwardedTo.toLowerCase().includes(email.toLowerCase())\n    );\n  }\n  \n  // Method 4: Check To header directly\n  if (!originalRecipient && to) {\n    originalRecipient = SOURCE_EMAILS.find(email => \n      to.toLowerCase().includes(email.toLowerCase())\n    );\n  }\n  \n  results.push({\n    json: {\n      emailId: email.id,\n      threadId: email.threadId,\n      from: from,\n      to: to,\n      subject: subject,\n      snippet: email.snippet || '',\n      bodyText: bodyText.substring(0, 2000),\n      originalRecipient: originalRecipient || CENTRAL_EMAIL,\n      headers: { deliveredTo, xForwardedTo, xOriginalTo }\n    }\n  });\n}\n\nreturn results;"
+      }
+    },
+    {
+      "id": "generate-draft",
+      "name": "Generate AI Draft",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.1,
+      "position": [680, 300],
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "model": "gpt-5-mini",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an email assistant. Write a professional, helpful reply to the email below. Keep it concise and friendly. Do not include a subject line - just the body of the reply."
+            },
+            {
+              "role": "user",
+              "content": "=From: {{ $json.from }}\nSubject: {{ $json.subject }}\n\nEmail content:\n{{ $json.bodyText || $json.snippet }}\n\nPlease draft a reply."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 500,
+          "temperature": 0.7
+        }
+      }
+    },
+    {
+      "id": "create-draft",
+      "name": "Create Gmail Draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [900, 300],
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "=Re: {{ $('Extract Original Recipient').item.json.subject.replace(/^Re: /i, '') }}",
+        "emailType": "text",
+        "message": "={{ $json.choices[0].message.content }}",
+        "options": {
+          "sendTo": "={{ $('Extract Original Recipient').item.json.from }}",
+          "threadId": "={{ $('Extract Original Recipient').item.json.threadId }}",
+          "fromAlias": "={{ $('Extract Original Recipient').item.json.originalRecipient }}"
+        }
+      }
+    },
+    {
+      "id": "mark-processed",
+      "name": "Mark as Processed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1120, 300],
+      "continueOnFail": true,
+      "parameters": {
+        "resource": "message",
+        "operation": "addLabels",
+        "messageId": "={{ $('Extract Original Recipient').item.json.emailId }}",
+        "labelIds": ["Draft-Created"]
+      }
+    },
+    {
+      "id": "sticky-config",
+      "name": "⚙️ Configuration",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 80],
+      "parameters": {
+        "content": "## ✅ Email → AI Draft Workflow\n\n**Source Emails:**\n- finance@hoz.sg\n- home@hoz.sg\n- how.weijie@hoz.sg\n\n**Central Inbox:** howweijie@gmail.com\n\n**Setup Required:**\n1. Gmail credentials (howweijie@gmail.com)\n2. OpenAI API credentials\n3. Create Gmail label 'Draft-Created'\n4. Add 'Send As' aliases in Gmail Settings"
+      }
+    },
+    {
+      "id": "sticky-flow",
+      "name": "📖 How It Works",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [680, 80],
+      "parameters": {
+        "content": "## How It Works\n\n1. **Gmail Trigger** - Checks for new unread emails every 5 min\n2. **Extract Original Recipient** - Identifies which @hoz.sg email it was sent to\n3. **Generate AI Draft** - Creates a draft reply using GPT-4\n4. **Create Gmail Draft** - Saves draft with correct 'From' alias pre-selected\n5. **Mark as Processed** - Adds label to prevent re-processing\n\n**To send:** Open Gmail → Drafts → Review → Send"
+      }
+    },
+    {
+      "id": "sticky-aliases",
+      "name": "⚠️ Send As Setup",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1100, 80],
+      "parameters": {
+        "content": "## ⚠️ Required: Send As Aliases\n\nFor 'From' to work correctly:\n\n1. Gmail → Settings → Accounts & Import\n2. Under 'Send mail as' → Add:\n   - finance@hoz.sg\n   - home@hoz.sg\n   - how.weijie@hoz.sg\n3. Verify each email address\n\n**Without this, drafts will default to howweijie@gmail.com**"
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [[{ "node": "Extract Original Recipient", "type": "main", "index": 0 }]]
+    },
+    "Extract Original Recipient": {
+      "main": [[{ "node": "Generate AI Draft", "type": "main", "index": 0 }]]
+    },
+    "Generate AI Draft": {
+      "main": [[{ "node": "Create Gmail Draft", "type": "main", "index": 0 }]]
+    },
+    "Create Gmail Draft": {
+      "main": [[{ "node": "Mark as Processed", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "pinData": {}
+}
