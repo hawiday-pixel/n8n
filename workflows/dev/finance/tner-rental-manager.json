@@ -1,8 +1,8 @@
 {
   "name": "TNER | Finance | rental-manager [DEV]",
   "id": "P35tGlEN0hhuDtfu",
-  "versionCounter": 11,
-  "updatedAt": "2025-12-09T07:02:21.469Z",
+  "versionCounter": 21,
+  "updatedAt": "2025-12-09T15:10:23.661Z",
   "active": false,
   "nodes": [
     {
@@ -470,13 +470,135 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Prepare update data\nconst existingRental = $input.first().json;\nconst payload = $('Parse Payload').first().json;\nconst updates = payload.rental;\n\nif (!existingRental || !existingRental.id) {\n  throw new Error('Rental not found: ' + payload.rental_id);\n}\n\n// Build update object with only provided fields\nconst updateRecord = { id: existingRental.id };\nconst changes = [];\n\n// List of updatable fields\nconst updatableFields = [\n  'customer_name', 'customer_phone', 'customer_email', 'customer_address',\n  'start_date', 'end_date',\n  'luggage_size', 'luggage_model', 'luggage_color', 'quantity',\n  'delivery_type', 'delivery_address', 'delivery_date', 'delivery_time', 'delivery_notes',\n  'return_type', 'return_address', 'return_date', 'return_time', 'return_notes',\n  'rental_amount', 'delivery_fee'\n];\n\nfor (const field of updatableFields) {\n  if (updates[field] !== undefined && updates[field] !== existingRental[field]) {\n    changes.push({\n      field: field,\n      old_value: String(existingRental[field] || ''),\n      new_value: String(updates[field] || '')\n    });\n    updateRecord[field] = updates[field];\n  }\n}\n\n// Recalculate totals if amounts changed\nif (updates.rental_amount !== undefined || updates.delivery_fee !== undefined) {\n  const rentalAmt = updates.rental_amount ?? existingRental.rental_amount ?? 0;\n  const deliveryFee = updates.delivery_fee ?? existingRental.delivery_fee ?? 0;\n  updateRecord.total_amount = rentalAmt + deliveryFee;\n  updateRecord.amount_due = updateRecord.total_amount - (existingRental.amount_paid || 0);\n}\n\nreturn [{\n  json: {\n    updateRecord: updateRecord,\n    changes: changes,\n    existingRental: existingRental,\n    changed_by: payload.changed_by,\n    note: payload.note\n  }\n}];"
+        "jsCode": "// Prepare update data and detect if amounts changed\nconst existingRental = $input.first().json;\nconst payload = $('Parse Payload').first().json;\nconst updates = payload.rental;\n\nif (!existingRental || !existingRental.id) {\n  throw new Error('Rental not found: ' + payload.rental_id);\n}\n\n// Build update object with only provided fields\nconst updateRecord = { id: existingRental.id };\nconst changes = [];\n\n// Track if financial amounts changed (for Xero update)\nlet amountsChanged = false;\n\n// List of updatable fields\nconst updatableFields = [\n  'customer_name', 'customer_phone', 'customer_email', 'customer_address',\n  'start_date', 'end_date',\n  'luggage_size', 'luggage_model', 'luggage_color', 'quantity',\n  'delivery_type', 'delivery_address', 'delivery_date', 'delivery_time', 'delivery_notes',\n  'return_type', 'return_address', 'return_date', 'return_time', 'return_notes',\n  'rental_amount', 'delivery_fee'\n];\n\nfor (const field of updatableFields) {\n  if (updates[field] !== undefined && updates[field] !== existingRental[field]) {\n    changes.push({\n      field: field,\n      old_value: String(existingRental[field] || ''),\n      new_value: String(updates[field] || '')\n    });\n    updateRecord[field] = updates[field];\n    \n    // Check if this is a financial field\n    if (field === 'rental_amount' || field === 'delivery_fee') {\n      amountsChanged = true;\n    }\n  }\n}\n\n// Recalculate totals if amounts changed\nif (updates.rental_amount !== undefined || updates.delivery_fee !== undefined) {\n  const rentalAmt = updates.rental_amount ?? existingRental.rental_amount ?? 0;\n  const deliveryFee = updates.delivery_fee ?? existingRental.delivery_fee ?? 0;\n  updateRecord.total_amount = rentalAmt + deliveryFee;\n  updateRecord.amount_due = updateRecord.total_amount - (existingRental.amount_paid || 0);\n}\n\nreturn [{\n  json: {\n    updateRecord: updateRecord,\n    changes: changes,\n    existingRental: existingRental,\n    amountsChanged: amountsChanged,\n    changed_by: payload.changed_by,\n    note: payload.note\n  }\n}];"
       },
       "id": "prepare-update",
       "name": "Prepare Update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1140, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "check-amt-1",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "leftValue": "={{ $json.amountsChanged }}",
+              "rightValue": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "check-amounts-changed",
+      "name": "Check Amounts Changed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1360, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.xero.com/connections",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-xero-tenants-update",
+      "name": "Get Xero Tenants (Update)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [1580, 300],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "acPNCKWEdEc0gA8V",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Find ALWC/TNER tenant for Xero invoice update\nconst connections = $input.all();\nconst alwcConnection = connections.find(conn => \n  conn.json.tenantName && \n  (conn.json.tenantName.toUpperCase().includes('ALWC') || \n   conn.json.tenantName.toUpperCase().includes('TNER'))\n);\n\nif (!alwcConnection) {\n  throw new Error('ALWC/TNER tenant not found');\n}\n\nconst prevData = $('Check Amounts Changed').first().json;\nconst existingRental = prevData.existingRental;\nconst updateRecord = prevData.updateRecord;\n\n// Get the updated amounts\nconst rentalAmount = updateRecord.rental_amount ?? existingRental.rental_amount ?? 0;\nconst deliveryFee = updateRecord.delivery_fee ?? existingRental.delivery_fee ?? 0;\n\n// Calculate rental duration for description\nconst startDate = updateRecord.start_date || existingRental.start_date;\nconst endDate = updateRecord.end_date || existingRental.end_date;\nconst durationDays = Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24));\n\n// Build line items\nconst lineItems = [];\n\n// Main rental line item\nconst luggageSize = updateRecord.luggage_size || existingRental.luggage_size || '';\nconst luggageDesc = luggageSize ? \n  `Luggage Rental - ${luggageSize.charAt(0).toUpperCase() + luggageSize.slice(1)}` : \n  'Luggage Rental';\nconst quantity = updateRecord.quantity || existingRental.quantity || 1;\n\nlineItems.push({\n  Description: `${luggageDesc} x${quantity} (${durationDays} days: ${startDate} to ${endDate})`,\n  Quantity: 1,\n  UnitAmount: rentalAmount,\n  AccountCode: '200'\n});\n\n// Delivery fee if applicable\nif (deliveryFee > 0) {\n  const deliveryType = updateRecord.delivery_type || existingRental.delivery_type || 'delivery';\n  lineItems.push({\n    Description: `Delivery Fee (${deliveryType === 'delivery' ? 'Delivered' : 'Collection'})`,\n    Quantity: 1,\n    UnitAmount: deliveryFee,\n    AccountCode: '200'\n  });\n}\n\n// Build Xero invoice update payload\nconst xeroInvoiceUpdate = {\n  InvoiceID: existingRental.xero_invoice_id,\n  LineItems: lineItems,\n  Reference: `Rental: ${startDate} to ${endDate}`\n};\n\nreturn [{\n  json: {\n    tenantId: alwcConnection.json.tenantId,\n    xeroInvoiceUpdate: xeroInvoiceUpdate,\n    updateRecord: prevData.updateRecord,\n    changes: prevData.changes,\n    existingRental: existingRental,\n    amountsChanged: true,\n    changed_by: prevData.changed_by,\n    note: prevData.note\n  }\n}];"
+      },
+      "id": "prepare-xero-update",
+      "name": "Prepare Xero Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1800, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.xero.com/api.xro/2.0/Invoices",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "xeroOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xero-tenant-id",
+              "value": "={{ $json.tenantId }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ Invoices: [$json.xeroInvoiceUpdate] }) }}",
+        "options": {}
+      },
+      "id": "update-xero-invoice",
+      "name": "Update Xero Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [2020, 300],
+      "credentials": {
+        "xeroOAuth2Api": {
+          "id": "acPNCKWEdEc0gA8V",
+          "name": "Xero account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Prepare data for Supabase update after Xero update\nconst xeroResponse = $input.first().json;\nconst prevData = $('Prepare Xero Update').first().json;\n\nreturn [{\n  json: {\n    updateRecord: prevData.updateRecord,\n    changes: prevData.changes,\n    existingRental: prevData.existingRental,\n    xeroUpdated: true,\n    xeroResponse: xeroResponse,\n    changed_by: prevData.changed_by,\n    note: prevData.note\n  }\n}];"
+      },
+      "id": "post-xero-update",
+      "name": "Post Xero Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 300]
     },
     {
       "parameters": {
@@ -491,7 +613,7 @@
       "name": "Update Rental",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
-      "position": [1360, 400],
+      "position": [2460, 400],
       "credentials": {
         "supabaseApi": {
           "id": "supabase-tner",
@@ -502,7 +624,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={\n  \"success\": true,\n  \"action\": \"update\",\n  \"rental_id\": \"{{ $('Prepare Update').first().json.existingRental.id }}\",\n  \"changes_count\": {{ $('Prepare Update').first().json.changes.length }},\n  \"message\": \"Rental updated successfully\"\n}",
+        "responseBody": "={\n  \"success\": true,\n  \"action\": \"update\",\n  \"rental_id\": \"{{ $('Prepare Update').first().json.existingRental.id }}\",\n  \"changes_count\": {{ $('Prepare Update').first().json.changes.length }},\n  \"xero_updated\": {{ $('Prepare Update').first().json.amountsChanged || false }},\n  \"message\": \"Rental updated successfully\"\n}",
         "options": {
           "responseCode": 200
         }
@@ -511,7 +633,7 @@
       "name": "Respond Success (Update)",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
-      "position": [1580, 400]
+      "position": [2680, 400]
     },
     {
       "parameters": {
@@ -868,6 +990,16 @@
       "parameters": {
         "content": "## Create Flow\n1. Get Xero tenants\n2. Find ALWC/TNER tenant\n3. Prepare & upsert contact\n4. Build invoice with line items\n5. Create Xero invoice\n6. Save to Supabase\n7. Log change\n8. Respond"
       }
+    },
+    {
+      "parameters": {
+        "content": "## Update Flow (Enhanced)\n\n**Split Source of Truth:**\n- Xero = amounts (authoritative)\n- Supabase = dates/logistics\n\n**Flow:**\n1. Get existing rental\n2. Prepare update + detect if amounts changed\n3. IF amounts changed:\n   - Get Xero tenants\n   - Update Xero invoice line items\n   - Then update Supabase\n4. ELSE:\n   - Update Supabase directly\n5. Respond with xero_updated flag"
+      },
+      "id": "sticky-update",
+      "name": "Update Flow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1100, 260]
     }
   ],
   "connections": {
@@ -1047,6 +1179,68 @@
       ]
     },
     "Prepare Update": {
+      "main": [
+        [
+          {
+            "node": "Check Amounts Changed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Amounts Changed": {
+      "main": [
+        [
+          {
+            "node": "Get Xero Tenants (Update)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Rental",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Xero Tenants (Update)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Xero Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Xero Update": {
+      "main": [
+        [
+          {
+            "node": "Update Xero Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Xero Invoice": {
+      "main": [
+        [
+          {
+            "node": "Post Xero Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Xero Update": {
       "main": [
         [
           {

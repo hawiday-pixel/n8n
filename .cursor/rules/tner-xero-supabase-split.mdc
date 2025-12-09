@@ -1,0 +1,106 @@
+---
+alwaysApply: true
+---
+# Data Source of Truth
+
+## Overview
+
+TNER operates with a **split source of truth** architecture where different data types are owned by different systems. This separation is intentional and must be respected in all integrations.
+
+## Source of Truth Matrix
+
+| Data Type | Source of Truth | Examples |
+|-----------|-----------------|----------|
+| **Financials** | Xero | `rental_amount`, `delivery_fee`, `total_amount`, `payment_status`, `invoice_number` |
+| **Logistics** | Supabase | `start_date`, `end_date`, `delivery_date`, `return_date`, `status`, `customer_info` |
+
+## Rules
+
+### Financials (Xero is authoritative)
+- All monetary values MUST be read from Xero
+- Payment status changes originate in Xero
+- Invoice generation and tracking happens in Xero
+- Never store duplicate financial data in Supabase as source
+
+### Logistics (Supabase is authoritative)
+- All scheduling and date fields MUST be read from Supabase
+- Rental lifecycle status (`pending`, `active`, `completed`, `cancelled`) lives in Supabase
+- Customer delivery preferences stored in Supabase
+- Never rely on Xero for date/scheduling data
+
+## Integration Pattern
+
+When building workflows or features that need both:
+
+1. **Read** financial data from Xero API
+2. **Read** logistics data from Supabase
+3. **Join** by a shared identifier (e.g., `rental_id`, `invoice_number`)
+4. **Never** write to the non-authoritative source
+
+## Common Mistakes to Avoid
+
+❌ Caching Xero amounts in Supabase and treating cache as truth
+❌ Using Supabase dates to calculate financial periods
+❌ Syncing data bidirectionally without clear ownership
+❌ Storing `payment_status` in Supabase
+
+## Invoice Creation Flow
+
+```
+Dashboard → ai-core → n8n → Xero → Supabase
+```
+
+| Step | System | Action |
+|------|--------|--------|
+| 1 | **Dashboard** | User initiates invoice creation |
+| 2 | **ai-core** | Validates request, applies business logic |
+| 3 | **n8n** | Orchestrates the workflow |
+| 4 | **Xero** | Creates invoice (source of truth for financials) |
+| 5 | **Supabase** | Updates rental record with invoice reference (read-only cache) |
+
+**Key principle:** Xero creates the invoice first, then Supabase is updated with the reference. Never the other way around.
+
+## Xero API Edit Limitations
+
+TNER invoices are created as **AUTHORISED**. The main limitation is **payments**, not the status.
+
+| Invoice State | Can Edit via API? | Notes |
+|---------------|-------------------|-------|
+| AUTHORISED, no payment | ✅ Yes | Edit amounts, dates, line items freely |
+| AUTHORISED, with payment | ❌ No | Returns validation error |
+| AUTHORISED, within lock period | ⚠️ Limited | UI allows some edits API doesn't |
+
+### Error When Payment Exists
+
+```
+"This document cannot be edited as it has a payment or credit note allocated to it."
+```
+
+### Workaround for Paid Invoices
+
+```
+1. DELETE payment: POST /Payments/{PaymentID} with {"Status": "DELETED"}
+2. EDIT invoice: PUT /Invoices/{InvoiceID}
+3. RE-APPLY payment (if appropriate)
+```
+
+### Booking Edit Flow
+
+```
+Dashboard → ai-core → n8n → [Xero if financials] → Supabase
+```
+
+| What Changed | Update Where | Flow |
+|--------------|--------------|------|
+| Dates only | Supabase only | Dashboard → ai-core → n8n → Supabase |
+| Amounts only (no payment) | Xero → Supabase | Dashboard → ai-core → n8n → Xero → Supabase |
+| Amounts (with payment) | Complex | Delete payment → Edit → Re-apply |
+| Both dates + amounts | Both systems | Xero first (if amounts), then Supabase |
+
+## Sync Strategy
+
+| Direction | Allowed | Purpose |
+|-----------|---------|---------|
+| Xero → Supabase | ✅ Read-only cache | Display purposes only, not authoritative |
+| Supabase → Xero | ✅ One-way push | Create invoices with logistics context |
+| Bidirectional sync | ❌ Never | Creates conflicts and data drift |
