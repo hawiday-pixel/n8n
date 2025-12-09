@@ -1,6 +1,6 @@
 ---
 created: 2025-12-06
-updated: 2025-12-07
+updated: 2025-12-09
 alwaysApply: true
 ---
 
@@ -9,21 +9,37 @@ alwaysApply: true
 ## Important Concepts
 
 - **n8n has no folders** — workflows are a flat list in n8n
-- **Local folders** (`admin/`, `sales/`, etc.) are for local organization only
+- **Local folders** (`dev/`, `prod/`, `admin/`, etc.) are for local organization only
 - **Workflows are matched by `"name"` field** — changing the name creates a new workflow, not an update
+- **Single n8n instance** — dev and prod workflows coexist, differentiated by `[DEV]` suffix
+
+## Environment Separation
+
+Dev and prod workflows live in the **same n8n instance** but are completely independent:
+
+| Aspect | Dev Workflow | Prod Workflow |
+|--------|--------------|---------------|
+| Name suffix | `[DEV]` | (none) |
+| Local folder | `workflows/dev/` | `workflows/prod/` |
+| Credentials | Sandbox/test | Live |
+| `active` | `false` | `true` |
+| Webhook URL | Unique per workflow | Unique per workflow |
+
+**If dev breaks, prod is NOT affected** — they are separate workflows with different IDs.
 
 ## API Access
 
 n8n MCP tools are configured and available. No scripts needed — use MCP tools directly through Cursor.
 
-## Four Types of Work
+## Five Types of Work
 
-### 1. Create New Workflow
+### 1. Create New Dev Workflow
+- Start all new workflows in `workflows/dev/`
 - Follow naming conventions in `workflow-naming.mdc`
 - Filename: `{company}-{short-description}.json`
-- Workflow name (JSON): `{COMPANY} | {Category} | {short-description}`
-- Place in appropriate category folder under `workflows/`
-- Deploy with: `n8n_create_workflow` MCP tool (Cursor reads JSON, sends to n8n)
+- Workflow name (JSON): `{COMPANY} | {Category} | {short-description} [DEV]`
+- Set `"active": false`
+- Deploy with: `n8n_create_workflow` MCP tool
 
 ### 2. Amend/Edit Existing Workflow
 - **Export first** to get the latest version from n8n using `n8n_get_workflow`
@@ -32,12 +48,21 @@ n8n MCP tools are configured and available. No scripts needed — use MCP tools 
 - **Do NOT change the `"name"` field** — this will create a duplicate!
 - Deploy changes with `n8n_update_full_workflow` MCP tool
 
-### 3. Rename Workflow
+### 3. Promote Dev to Prod
+When dev workflow is stable and tested:
+1. Copy file from `dev/` to `prod/`
+2. Remove `[DEV]` from the `"name"` field
+3. Remove or update `"id"` field
+4. Update credentials to production
+5. Set `"active": true`
+6. Deploy with `n8n_create_workflow`
+
+### 4. Rename Workflow
 - **Do NOT change `"name"` in local JSON** — import will create duplicate
 - Use `n8n_update_partial_workflow` with `updateName` operation
 - After renaming in n8n, update local JSON filename to match
 
-### 4. Delete Workflow
+### 5. Delete Workflow
 - **ALWAYS ask for explicit user approval before deleting**
 - Use `n8n_delete_workflow` MCP tool
 - Never delete without confirmation
@@ -55,30 +80,55 @@ n8n MCP tools are configured and available. No scripts needed — use MCP tools 
 | `n8n_validate_workflow` | Validate workflow by ID |
 | `n8n_autofix_workflow` | Auto-fix common validation errors |
 
-## Standard Workflow
+## Standard Development Flow
 
-1. **Export**: Use `n8n_list_workflows` + `n8n_get_workflow` to sync from n8n
-2. **Edit**: Modify JSON file(s) as needed
-3. **Deploy**: Use `n8n_update_full_workflow` or `n8n_create_workflow`
+```
+1. CREATE (dev/)
+   └── Create workflow in workflows/dev/{category}/
+   └── Name: "COMPANY | Category | description [DEV]"
+   └── Deploy to n8n with n8n_create_workflow
+
+2. TEST (in n8n)
+   └── Run manual tests
+   └── Use sandbox credentials
+   └── Break things, experiment freely
+
+3. ITERATE (dev/)
+   └── Export latest: n8n_get_workflow
+   └── Edit local file
+   └── Deploy: n8n_update_full_workflow
+   └── Repeat until stable
+
+4. PROMOTE (dev/ → prod/)
+   └── Copy to workflows/prod/{category}/
+   └── Remove [DEV] from name
+   └── Update credentials to production
+   └── Set active: true
+   └── Deploy: n8n_create_workflow
+
+5. MAINTAIN (prod/)
+   └── For prod changes: edit prod/ file
+   └── Always test in dev first if risky
+```
 
 ## Common Operations
 
 ### Export a workflow
 ```
-Ask Cursor: "Export workflow ID xyz to workflows/admin/"
+Ask Cursor: "Export workflow ID xyz to workflows/dev/admin/"
 → Uses n8n_get_workflow, writes to local file
 ```
 
-### Deploy a workflow
+### Deploy a dev workflow
 ```
-Ask Cursor: "Deploy workflows/admin/tner-email-classifier.json to n8n"
+Ask Cursor: "Deploy workflows/dev/admin/tner-email-classifier.json to n8n"
 → Reads local file, uses n8n_create_workflow or n8n_update_full_workflow
 ```
 
-### Rename a workflow
+### Promote to production
 ```
-Ask Cursor: "Rename workflow 'OLD NAME' to 'NEW NAME'"
-→ Uses n8n_update_partial_workflow with updateName operation
+Ask Cursor: "Promote tner-email-classifier from dev to prod"
+→ Copies file, removes [DEV], updates settings, deploys
 ```
 
 ### Activate/Deactivate
@@ -91,5 +141,7 @@ Ask Cursor: "Activate workflow ID xyz"
 
 - **Do not ask for API credentials** — MCP tools are pre-configured
 - **Never change `"name"` field directly in JSON** — use MCP rename instead
+- **Start all new workflows in dev/** — never create directly in prod/
+- **Test thoroughly before promoting** — prod should only have stable workflows
 - Match existing workflows by the `"name"` field in JSON
 - Use `n8n_health_check` to verify API connectivity if issues occur

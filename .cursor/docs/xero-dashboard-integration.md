@@ -2194,3 +2194,5 @@ This documentation was enhanced with research from:
 - [n8n MCP Rules](../rules/n8n-mcp.mdc) - Workflow building guidelines
 - [Workflow Naming](../rules/workflow-naming.mdc) - Naming conventions
 - [How to Deploy](./how-to-deploy.md) - Deployment process
+
+

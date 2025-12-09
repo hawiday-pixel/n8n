@@ -1,14 +1,33 @@
 ---
+created: 2025-12-06
+updated: 2025-12-09
 alwaysApply: true
 ---
+
 # n8n Workflow Naming Convention
+
+## Environments
+
+All workflows exist in two environments within a **single n8n instance**:
+
+| Environment | Purpose | Workflow Name Suffix | `active` |
+|-------------|---------|---------------------|----------|
+| **Development** | Testing, experiments, aggressive changes | `[DEV]` | `false` |
+| **Production** | Stable, live workflows | (none) | `true` |
+
+**Why single instance works:**
+- Each workflow is unique (different name, different ID)
+- Dev and prod use different credentials
+- Different webhook URLs per workflow
+- Dev workflow issues do NOT affect prod workflows
 
 ## Terminology
 
 | Term | Where it shows | Format |
 |------|----------------|--------|
 | **Filename** | File explorer / disk | `{company}-{short-description}.json` |
-| **Workflow name** | Inside JSON `"name"` field / n8n UI | `{COMPANY} \| {Category} \| {short-description}` |
+| **Workflow name (Dev)** | Inside JSON `"name"` field / n8n UI | `{COMPANY} \| {Category} \| {short-description} [DEV]` |
+| **Workflow name (Prod)** | Inside JSON `"name"` field / n8n UI | `{COMPANY} \| {Category} \| {short-description}` |
 
 ## Filename Format
 
@@ -20,14 +39,20 @@ All workflow JSON files should be named using this pattern:
 
 Example: `tner-auto-fix-reconciliation.json`
 
+**Same filename** is used in both `dev/` and `prod/` folders. The environment is determined by the folder, not the filename.
+
 ## Workflow Name Format
 
-The **workflow name** (inside the JSON `"name"` field) should follow:
+### Development Workflows
+```
+{COMPANY} | {Category} | {short-description} [DEV]
+```
+Example: `TNER | Admin | auto-fix-reconciliation [DEV]`
 
+### Production Workflows
 ```
 {COMPANY} | {Category} | {short-description}
 ```
-
 Example: `TNER | Admin | auto-fix-reconciliation`
 
 ## Companies
@@ -47,29 +72,70 @@ There are only 3 companies:
 | **COMPANY** | Uppercase company code (HOZ, TNER, WRAP) | `HOZ`, `TNER`, `WRAP` |
 | **Category** | The folder/workflow category | `Vendor-operation`, `Admin`, `Sales` |
 | **Short Description** | Brief purpose | `gate-supplier`, `admin-dashboard` |
+| **[DEV]** | Dev environment suffix (prod has no suffix) | `[DEV]` |
 
 ## Examples
 
-| File Path | Workflow Name |
-|-----------|---------------|
-| `vendor-operation/hoz-gate-order-to-supplier.json` | `HOZ \| Vendor-operation \| gate-supplier` |
-| `admin/tner-admin-dashboard.json` | `TNER \| Admin \| admin-dashboard` |
-| `sales/tner-whatsapp-rag-secure.json` | `TNER \| Sales \| whatsapp-rag` |
+| Local File Path | Workflow Name (in n8n) |
+|-----------------|------------------------|
+| `dev/admin/hoz-email-classifier.json` | `HOZ \| Admin \| email-classifier [DEV]` |
+| `prod/admin/hoz-email-classifier.json` | `HOZ \| Admin \| email-classifier` |
+| `dev/finance/tner-rental-manager.json` | `TNER \| Finance \| rental-manager [DEV]` |
+| `prod/finance/tner-rental-manager.json` | `TNER \| Finance \| rental-manager` |
 
 ## Folder Structure
 
 ```
 workflows/
-├── admin/             # Administrative work: emails, data sorting, personal scheduling
-├── customer-service/  # After-sales support, customer issues, support tickets
-├── finance/           # Xero, invoicing, accounting
-├── human-resources/   # HR workflows, employee management
-├── legal/             # Legal documents, contracts, compliance
-├── marketing/         # Campaigns, promotions, social media, product scrapers
-├── operations/        # Job scheduling, ServiceM8
-├── sales/             # Sales consultation, prospecting, lead management
-├── shopify/           # E-commerce integrations
-├── technology/        # Internal workflows to improve efficiency
-├── utils/             # Generic utility workflows
-└── vendor-operation/  # Supplier/vendor workflows
+├── dev/                        # Development workflows (testing, experiments)
+│   ├── admin/                  # Administrative work: emails, data sorting
+│   ├── customer-service/       # After-sales support, support tickets
+│   ├── finance/                # Xero, invoicing, accounting
+│   ├── human-resources/        # HR workflows, employee management
+│   ├── legal/                  # Legal documents, contracts, compliance
+│   ├── marketing/              # Campaigns, promotions, social media
+│   ├── operations/             # Job scheduling, ServiceM8
+│   ├── sales/                  # Sales consultation, prospecting
+│   ├── shopify/                # E-commerce integrations
+│   ├── technology/             # Internal efficiency workflows
+│   ├── utils/                  # Generic utility workflows
+│   └── vendor-operation/       # Supplier/vendor workflows
+│
+└── prod/                       # Production workflows (stable, live)
+    ├── admin/
+    ├── customer-service/
+    ├── finance/
+    ├── human-resources/
+    ├── legal/
+    ├── marketing/
+    ├── operations/
+    ├── sales/
+    ├── shopify/
+    ├── technology/
+    ├── utils/
+    └── vendor-operation/
 ```
+
+**Important:** Only `dev/` and `prod/` exist at the root level. All category folders are nested inside them.
+
+## Key Differences Between Dev and Prod
+
+| Aspect | Dev (`workflows/dev/`) | Prod (`workflows/prod/`) |
+|--------|------------------------|--------------------------|
+| Workflow name | `...name [DEV]` | `...name` |
+| `active` field | `false` | `true` |
+| `id` field | Dev workflow ID | Prod workflow ID |
+| Credentials | Sandbox/test credentials | Live credentials |
+| Trigger intervals | Manual or longer (1 hour) | Real intervals (15 min) |
+| Error handling | Logging only | Alerts enabled |
+
+## Promotion Workflow
+
+When a dev workflow is ready for production:
+
+1. Copy JSON from `dev/` to `prod/`
+2. **Remove `[DEV]`** from the `"name"` field
+3. **Remove `id`** field (will get new ID on create) or update to prod ID
+4. Update credentials to production
+5. Set `"active": true`
+6. Deploy with `n8n_create_workflow` or `n8n_update_full_workflow`

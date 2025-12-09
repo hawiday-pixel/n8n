@@ -1,0 +1,73 @@
+{
+  "name": "HOZ | Admin | email-analysis [DEV]",
+  "id": "IFMtisKrAT5fXJXy",
+  "versionCounter": 5,
+  "updatedAt": "2025-12-07T07:16:17.000Z",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Run Analysis",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 304]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 300,
+        "filters": {}
+      },
+      "id": "gmail-get-emails",
+      "name": "Get Last 300 Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [464, 304],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "wj7aNsMqDcoKmmAg",
+          "name": "home@hoz account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const emails = $input.all();\n\n// Analysis containers\nconst senderDomains = {};\nconst senderEmails = {};\nconst subjectKeywords = {};\nconst labelCounts = {};\nconst hourDistribution = {};\n\n// Common promotional indicators\nconst promoIndicators = ['unsubscribe', 'newsletter', 'promotion', 'sale', 'discount', 'offer', 'deal', 'marketing', 'promo'];\nconst orderIndicators = ['order', 'purchase', 'receipt', 'invoice', 'payment', 'confirmation', 'shipped', 'delivery', 'tracking'];\nconst leadIndicators = ['inquiry', 'enquiry', 'contact', 'interested', 'quote', 'quotation', 'request'];\n\nlet promoCount = 0;\nlet orderCount = 0;\nlet leadCount = 0;\n\nfor (const item of emails) {\n  const email = item.json;\n  const from = email.From || '';\n  const subject = (email.Subject || '').toLowerCase();\n  const snippet = (email.snippet || '').toLowerCase();\n  const labels = email.labels || [];\n  const date = email.Date ? new Date(email.Date) : null;\n  \n  // Extract domain from sender\n  const domainMatch = from.match(/@([\\w.-]+)/);\n  if (domainMatch) {\n    const domain = domainMatch[1].toLowerCase();\n    senderDomains[domain] = (senderDomains[domain] || 0) + 1;\n  }\n  \n  // Track full sender emails\n  const emailMatch = from.match(/<([^>]+)>/) || [null, from];\n  const senderEmail = (emailMatch[1] || from).toLowerCase().trim();\n  if (senderEmail) {\n    senderEmails[senderEmail] = (senderEmails[senderEmail] || 0) + 1;\n  }\n  \n  // Extract keywords from subject (words 4+ chars)\n  const words = subject.split(/\\s+/).filter(w => w.length >= 4 && !/^[\\d]+$/.test(w));\n  for (const word of words) {\n    const cleanWord = word.replace(/[^a-z]/g, '');\n    if (cleanWord.length >= 4) {\n      subjectKeywords[cleanWord] = (subjectKeywords[cleanWord] || 0) + 1;\n    }\n  }\n  \n  // Count labels\n  for (const label of labels) {\n    const labelName = label.name || label;\n    labelCounts[labelName] = (labelCounts[labelName] || 0) + 1;\n  }\n  \n  // Hour distribution\n  if (date) {\n    const hour = date.getHours();\n    hourDistribution[hour] = (hourDistribution[hour] || 0) + 1;\n  }\n  \n  // Categorize by content\n  const combined = subject + ' ' + snippet;\n  if (promoIndicators.some(p => combined.includes(p))) promoCount++;\n  if (orderIndicators.some(o => combined.includes(o))) orderCount++;\n  if (leadIndicators.some(l => combined.includes(l))) leadCount++;\n}\n\n// Sort and get top entries\nconst sortByCount = (obj) => Object.entries(obj)\n  .sort((a, b) => b[1] - a[1])\n  .slice(0, 30)\n  .map(([name, count]) => ({ name, count }));\n\nconst topDomains = sortByCount(senderDomains);\nconst topSenders = sortByCount(senderEmails);\nconst topKeywords = sortByCount(subjectKeywords);\nconst allLabels = sortByCount(labelCounts);\n\n// Identify potential high-priority senders (marketplace, orders)\nconst marketplaceDomains = topDomains.filter(d => \n  ['lazada', 'shopee', 'tiktok', 'zalora', 'qoo10', 'carousell', 'amazon'].some(m => d.name.includes(m))\n);\n\nconst potentialOrderDomains = topDomains.filter(d =>\n  ['order', 'shop', 'store', 'pay', 'stripe', 'paypal'].some(m => d.name.includes(m))\n);\n\nreturn [{\n  json: {\n    summary: {\n      totalEmails: emails.length,\n      estimatedPromo: promoCount,\n      estimatedOrders: orderCount,\n      estimatedLeads: leadCount\n    },\n    topSenderDomains: topDomains,\n    topSenderEmails: topSenders,\n    topSubjectKeywords: topKeywords,\n    gmailLabels: allLabels,\n    marketplaceDomains: marketplaceDomains,\n    potentialOrderDomains: potentialOrderDomains,\n    hourDistribution: Object.entries(hourDistribution)\n      .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))\n      .map(([hour, count]) => ({ hour: `${hour}:00`, count }))\n  }\n}];"
+      },
+      "id": "code-analyze",
+      "name": "Analyze Email Patterns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [688, 304]
+    },
+    {
+      "parameters": {
+        "jsCode": "const analysis = $input.first().json;\n\nlet report = '# HOZ Email Analysis Report\\n\\n';\nreport += `**Total Emails Analyzed:** ${analysis.summary.totalEmails}\\n\\n`;\nreport += `## Quick Stats\\n`;\nreport += `- Estimated Promotional: ${analysis.summary.estimatedPromo}\\n`;\nreport += `- Estimated Orders: ${analysis.summary.estimatedOrders}\\n`;\nreport += `- Estimated Leads/Inquiries: ${analysis.summary.estimatedLeads}\\n\\n`;\n\nreport += `## Top 20 Sender Domains\\n`;\nreport += `| Domain | Count |\\n|--------|-------|\\n`;\nfor (const d of analysis.topSenderDomains.slice(0, 20)) {\n  report += `| ${d.name} | ${d.count} |\\n`;\n}\n\nreport += `\\n## Top 20 Sender Emails\\n`;\nreport += `| Email | Count |\\n|-------|-------|\\n`;\nfor (const s of analysis.topSenderEmails.slice(0, 20)) {\n  report += `| ${s.name} | ${s.count} |\\n`;\n}\n\nreport += `\\n## Marketplace Senders Detected\\n`;\nif (analysis.marketplaceDomains.length > 0) {\n  for (const m of analysis.marketplaceDomains) {\n    report += `- ${m.name} (${m.count} emails)\\n`;\n  }\n} else {\n  report += `None detected in top domains\\n`;\n}\n\nreport += `\\n## Potential Order-Related Domains\\n`;\nif (analysis.potentialOrderDomains.length > 0) {\n  for (const o of analysis.potentialOrderDomains) {\n    report += `- ${o.name} (${o.count} emails)\\n`;\n  }\n} else {\n  report += `None detected in top domains\\n`;\n}\n\nreport += `\\n## Top Subject Keywords\\n`;\nfor (const k of analysis.topSubjectKeywords.slice(0, 15)) {\n  report += `- \"${k.name}\" (${k.count})\\n`;\n}\n\nreport += `\\n## Existing Gmail Labels\\n`;\nfor (const l of analysis.gmailLabels.slice(0, 15)) {\n  report += `- ${l.name} (${l.count})\\n`;\n}\n\nreturn [{ json: { report, ...analysis } }];"
+      },
+      "id": "code-report",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [912, 304]
+    }
+  ],
+  "connections": {
+    "Run Analysis": {
+      "main": [[{ "node": "Get Last 300 Emails", "type": "main", "index": 0 }]]
+    },
+    "Get Last 300 Emails": {
+      "main": [[{ "node": "Analyze Email Patterns", "type": "main", "index": 0 }]]
+    },
+    "Analyze Email Patterns": {
+      "main": [[{ "node": "Generate Report", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
+
+
+
+

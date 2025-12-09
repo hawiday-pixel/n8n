@@ -1,0 +1,66 @@
+{
+  "name": "HAW | Utils | email-sampler [DEV]",
+  "id": "9QCMXT8cBvNcAvyZ",
+  "versionCounter": 7,
+  "updatedAt": "2025-12-06T09:01:20.355Z",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "email-sampler",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "email-sampler-webhook"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 100,
+        "filters": {},
+        "options": {}
+      },
+      "id": "gmail-get-emails",
+      "name": "Gmail - Get Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [460, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "Ua2vTsXX5iWeJF78",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract key info from each email\nconst results = [];\n\nfor (const item of $input.all()) {\n  const email = item.json;\n  \n  // Extract headers\n  const headers = email.payload?.headers || [];\n  const getHeader = (name) => {\n    const header = headers.find(h => h.name.toLowerCase() === name.toLowerCase());\n    return header?.value || '';\n  };\n  \n  results.push({\n    json: {\n      id: email.id,\n      subject: getHeader('Subject'),\n      from: getHeader('From'),\n      to: getHeader('To'),\n      date: getHeader('Date'),\n      snippet: email.snippet?.substring(0, 150) || '',\n      labels: email.labelIds || []\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "code-extract",
+      "name": "Extract Email Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {"main": [[{"node": "Gmail - Get Emails", "type": "main", "index": 0}]]},
+    "Gmail - Get Emails": {"main": [[{"node": "Extract Email Info", "type": "main", "index": 0}]]}
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {}
+}
